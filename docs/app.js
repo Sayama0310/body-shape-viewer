@@ -1,21 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { loadBodyModel, createShapeMapper } from './body-model.js';
 
-// 試作ビューア: プリミティブを組み合わせた簡易人型。
-// 寸法は身長 170cm の体形を基準（メートル単位）にし、
-// 身長で縦方向の位置・長さを、BMI で胴・手足の太さを、性別で各部の比率を変える。
+// Anny のメッシュを身長・体重・性別に合わせて合成して表示する。
 
-const BASE_HEIGHT = 1.70;
-const BASE_BMI = 22;
 const STORAGE_KEY = 'body-shape-viewer:input';
-
-// 性別ごとの体形の傾向（1 が基準）
-const PROFILES = {
-  male: { shoulder: 1.08, chest: 1.05, pelvis: 0.94, belly: 1.1, thigh: 1.0, arm: 1.05, bust: 0 },
-  female: { shoulder: 0.9, chest: 0.94, pelvis: 1.12, belly: 0.85, thigh: 1.08, arm: 0.9, bust: 1 },
-};
+const SEXES = ['male', 'female'];
 
 const container = document.getElementById('viewer');
+const statusEl = document.getElementById('viewer-status');
 const heightRange = document.getElementById('height');
 const weightRange = document.getElementById('weight');
 const heightNumber = document.getElementById('height-num');
@@ -33,7 +26,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xe9e9ee);
 
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 50);
-camera.position.set(1.6, 1.3, 4.2);
+camera.position.set(1.2, 1.2, 3.4);
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a99, 1.6));
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
@@ -44,111 +37,62 @@ rimLight.position.set(-2, 2, -3);
 scene.add(rimLight);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0.9, 0);
+controls.target.set(0, 0.85, 0);
 controls.enableDamping = true;
 controls.enablePan = false;
-controls.minDistance = 1.2;
+controls.minDistance = 1.0;
 controls.maxDistance = 8;
 controls.update();
 
-// --- 人型 ---
-const material = new THREE.MeshStandardMaterial({ color: 0xd9a988, roughness: 0.75 });
-const figure = new THREE.Group();
-scene.add(figure);
+// --- 体形 ---
+const material = new THREE.MeshStandardMaterial({ color: 0xd9a988, roughness: 0.7 });
+let body = null; // { model, mapShape, mesh, positions }
 
-const UP = new THREE.Vector3(0, 1, 0);
-
-function addMesh(geometry, position, scale) {
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.copy(position);
-  if (scale) mesh.scale.copy(scale);
-  figure.add(mesh);
-  return mesh;
+function showStatus(text) {
+  statusEl.textContent = text;
+  statusEl.hidden = !text;
 }
 
-// a から b へ伸びる半径 r のカプセル
-function limb(a, b, r) {
-  const dir = new THREE.Vector3().subVectors(b, a);
-  const len = dir.length();
-  const geometry = new THREE.CapsuleGeometry(r, Math.max(len - 2 * r, 0.001), 6, 16);
-  const mesh = addMesh(geometry, new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5));
-  mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
-  return mesh;
+async function initBody() {
+  showStatus('体形データを読み込み中…');
+  try {
+    const model = await loadBodyModel();
+    const positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', positions);
+    geometry.setIndex(new THREE.BufferAttribute(model.index, 1));
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+    body = { model, mapShape: createShapeMapper(model), mesh, positions };
+    updateBody();
+  } catch (err) {
+    console.error(err);
+    showStatus('体形データを読み込めませんでした。再読み込みしてください。');
+  }
 }
 
-function clearFigure() {
-  for (const child of figure.children) child.geometry.dispose();
-  figure.clear();
+function updateBody() {
+  if (!body) return;
+  const { model, mapShape, mesh, positions } = body;
+  const shape = mapShape({ sex: state.sex, heightCm: state.height, weightKg: state.weight });
+  model.blend(shape.params, positions.array);
+  const { minY } = model.measure(positions.array);
+  mesh.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
+  positions.needsUpdate = true;
+  mesh.geometry.computeVertexNormals();
+  mesh.geometry.computeBoundingSphere();
+  showStatus(shape.inRange ? '' : 'モデルで表せる範囲を超えているため、近い体形を表示しています');
 }
 
-function buildFigure(heightCm, weightKg, sex) {
-  clearFigure();
-
-  const h = heightCm / 100;
-  const bmi = weightKg / (h * h);
-  const k = h / BASE_HEIGHT; // 縦方向の倍率
-  const ratio = THREE.MathUtils.clamp(bmi / BASE_BMI, 0.6, 2.2);
-  const limbW = Math.sqrt(ratio); // 手足の太さ
-  const trunkW = Math.pow(ratio, 0.8); // 胴は手足より太りやすくする
-  const y = (v) => v * k;
-  const v3 = (x, yy, z) => new THREE.Vector3(x, yy, z);
-  const p = PROFILES[sex];
-
-  // 頭・首（太さは体重で変えない）
-  addMesh(new THREE.SphereGeometry(0.105, 32, 24), v3(0, y(1.585), 0), v3(0.92, 1.12 * k, 1));
-  limb(v3(0, y(1.36), 0), v3(0, y(1.52), 0), 0.05 * Math.pow(ratio, 0.3));
-
-  // 胴（胸〜腹）と骨盤。前後方向は扁平にする
-  const chestR = 0.15 * trunkW * p.chest;
-  const torsoTop = y(1.40);
-  const torsoBottom = y(0.98);
-  const torso = new THREE.CapsuleGeometry(chestR, Math.max(torsoTop - torsoBottom - 2 * chestR, 0.01), 8, 24);
-  addMesh(torso, v3(0, (torsoTop + torsoBottom) / 2, 0), v3(1, 1, 0.68));
-
-  // 腹のふくらみ（BMI が高いほど前に出る）
-  const belly = 0.13 * Math.pow(ratio, 1.1) * p.belly;
-  addMesh(new THREE.SphereGeometry(belly, 24, 16), v3(0, y(1.08), 0.02 + 0.03 * (ratio - 1)), v3(1.05, 1.0, 0.85));
-
-  // 胸のふくらみ（女性のみ）
-  if (p.bust) {
-    const bustR = 0.06 * Math.pow(ratio, 0.6);
-    for (const s of [-1, 1]) {
-      addMesh(new THREE.SphereGeometry(bustR, 20, 14), v3(s * chestR * 0.42, y(1.27), chestR * 0.68 - bustR * 0.45));
-    }
-  }
-
-  const pelvisR = 0.14 * trunkW * p.pelvis;
-  addMesh(new THREE.SphereGeometry(pelvisR, 24, 16), v3(0, y(0.92), 0), v3(1.05, 0.75, 0.75));
-
-  // 脚
-  const legX = Math.max(0.085, pelvisR * 0.6);
-  const thighR = 0.068 * limbW * p.thigh;
-  const shinR = 0.048 * limbW;
-  for (const s of [-1, 1]) {
-    const hip = v3(s * legX, y(0.9), 0);
-    const knee = v3(s * legX * 0.95, y(0.48), 0.005);
-    const ankle = v3(s * legX * 0.9, y(0.08), 0);
-    limb(hip, knee, thighR);
-    limb(knee, ankle, shinR);
-    addMesh(new THREE.SphereGeometry((thighR + shinR) * 0.5, 16, 12), knee);
-    // 足
-    limb(v3(s * legX * 0.9, 0.04, -0.03), v3(s * legX * 0.92, 0.035, 0.15), 0.035);
-  }
-
-  // 腕（胴が太いほど肩の位置を外へ）
-  const upperArmR = 0.042 * limbW * p.arm;
-  const foreArmR = 0.034 * limbW * p.arm;
-  const shoulderX = (chestR * 0.95 + upperArmR * 0.7) * p.shoulder;
-  for (const s of [-1, 1]) {
-    const shoulder = v3(s * shoulderX, y(1.39), 0);
-    const elbow = v3(s * (shoulderX + 0.04 + 0.03 * (ratio - 1)), y(1.1), -0.01);
-    const wrist = v3(s * (shoulderX + 0.06 + 0.05 * (ratio - 1)), y(0.84), 0.02);
-    addMesh(new THREE.SphereGeometry(upperArmR * 1.15, 16, 12), shoulder);
-    limb(shoulder, elbow, upperArmR);
-    limb(elbow, wrist, foreArmR);
-    addMesh(new THREE.SphereGeometry((upperArmR + foreArmR) * 0.5, 16, 12), elbow);
-    addMesh(new THREE.SphereGeometry(0.045, 16, 12), v3(wrist.x, wrist.y - 0.04, wrist.z), v3(0.6, 1.3, 1));
-  }
+// 入力が続いても合成は1フレームに1回にする
+let updateQueued = false;
+function scheduleBodyUpdate() {
+  if (updateQueued) return;
+  updateQueued = true;
+  requestAnimationFrame(() => {
+    updateQueued = false;
+    updateBody();
+  });
 }
 
 // --- 入力 ---
@@ -195,7 +139,7 @@ function render({ syncNumbers = true } = {}) {
   bmiOut.textContent = bmi.toFixed(1);
   bmiClassOut.textContent = bmiClass(bmi);
 
-  buildFigure(state.height, state.weight, state.sex);
+  scheduleBodyUpdate();
 }
 
 function save() {
@@ -218,7 +162,7 @@ function restore() {
     const v = Number(saved[f.key]);
     if (isValid(f, v)) state[f.key] = round1(v);
   }
-  if (saved.sex in PROFILES) state.sex = saved.sex;
+  if (SEXES.includes(saved.sex)) state.sex = saved.sex;
 }
 
 for (const f of fields) {
@@ -258,6 +202,7 @@ for (const input of sexInputs) {
 
 restore();
 render();
+initBody();
 
 // --- 描画 ---
 function resize() {
