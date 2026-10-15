@@ -5,12 +5,14 @@
 
 | ファイル | 中身 |
 |---|---|
-| `anny-body.json` | メタデータ（頂点数・次元・量子化スケール・周囲長の計測頂点・バイナリ内の配置） |
-| `anny-body.bin` | 三角形・平均形状・各体形との差分・年齢の差分・局所変形と顔の肉付きの差分（約 5.3MB） |
+| `anny-body.json` | メタデータ（頂点数・次元・量子化スケール・周囲長の計測断面・バイナリ内の配置） |
+| `anny-body.bin` | 三角形・平均形状・各体形との差分・年齢の差分・局所変形と顔の肉付きの差分（約 4.9MB） |
 
-`formatVersion` は 3。
+`formatVersion` は 4。
+- 3 からの変更: 周囲長を8項目に増やした。局所変形を疎な形式（`localIndex` + `localDeltas`、`localChanges[k].start` / `count`）にし、
+  差分を静止姿勢で取ってスキニングの回転で姿勢側に回すようにした。周囲長の計測を頂点の帯から断面（`measurements.<name>.a` / `b` / `t`）に変えた
 - 2 からの変更: 年齢の次元（`age`, `ageDeltas`）と顔の肉付き（`faceFat`, `faceFatIndex`, `faceFatDeltas`）を追加。基準の年齢を16歳相当（`age = 2/3`）から30歳に変更
-- 1 からの変更: 局所変形 `localDeltas` と周囲長の計測頂点 `measurements` を追加
+- 1 からの変更: 局所変形 `localDeltas` と周囲長の計測頂点 `measurements` を追加（3 時点の形式）
 
 ## 体形の表し方
 
@@ -53,11 +55,22 @@ Anny の定義（`shape_calibration` の `morphological_age_mapping`、`age.year
 | `name` | Anny のラベル | 効く部位 |
 |---|---|---|
 | `chest` | `measure-bust-circ-incr` | 胸囲 |
+| `underbust` | `measure-underbust-circ-incr` | アンダーバスト |
 | `waist` | `measure-waist-circ-incr` | ウエスト |
 | `hip` | `measure-hips-circ-incr` | ヒップ |
+| `upperarm` | `measure-upperarm-circ-incr` | 二の腕（左右とも） |
+| `thigh` | `measure-thigh-circ-incr` | 太もも（左右とも） |
+| `calf` | `measure-calf-circ-incr` | ふくらはぎ（左右とも） |
+| `ankle` | `measure-ankle-circ-incr` | 足首（左右とも） |
 
-頂点 += `|v| × localDeltas[k][s] × localDeltaScale`（k は `localChanges` の順番、s は `v > 0` なら 0（incr）、`v < 0` なら 1（decr））。
-差分は平均的な成人（`gender = muscle = weight = 0.5`, `height = 0.3`, 30歳, 身長 約170cm）の上で取ったもので、
+差分は動く頂点だけの疎な形式。変形 k の頂点番号は `localIndex[start .. start + count)`、
+差分は `localDeltas` の `start × 6` 要素目から `[符号 +, -][count][xyz]` の順に並ぶ。
+
+頂点[localIndex[start + i]] += `|v| × localDeltas[(start × 2 + s × count + i) × 3 + xyz] × localDeltaScale`（s は `v > 0` なら 0（incr）、`v < 0` なら 1（decr））
+
+差分は平均的な成人（`gender = muscle = weight = 0.5`, `height = 0.3`, 30歳, 身長 約170cm）の静止姿勢で取り、
+各頂点のスキニングの回転（ボーンの回転を重みで平均したもの）で姿勢側に回したもの。
+姿勢をつけた頂点どうしの差を取ると、局所変形がボーンの位置を少し動かすぶん全身がずれるため、そうしていない。
 ほかの体形にもそのまま足す（Anny 本体でも局所変形は体形によらない加算）。
 
 ### 顔の肉付き
@@ -72,14 +85,22 @@ Anny の `weight` は頭の形をほとんど変えないので、顔の肉付�
 
 ### 周囲長の測り方
 
-`measurements.<name>` は周囲長を測る頂点の番号の配列。これらの頂点を XZ 平面（水平面）に投影し、
-凸包の周長を周囲長とする（巻き尺を当てたときの長さの近似）。腕・手の頂点は含まない。
+`measurements.<name>` は周囲長を測る断面。基準体形を水平面で切ったときに交わる辺を `a[i]`, `b[i]`（頂点番号）と
+内分比 `t[i]` で持ち、どの体形でも点 `v[a] + t × (v[b] - v[a])` を取る（体形が変わっても同じ部位を指す）。
+これらの点を XZ 平面（水平面）に投影し、凸包の周長を周囲長とする（巻き尺を当てたときの長さの近似）。
+胴の項目は腕・手の頂点を含まない。左右がある部位は左側（+X）の脚・腕だけで測る。
 
-| `name` | 選び方 |
+| `name` | 断面の高さ |
 |---|---|
-| `chest` | 女性の基準体形でバストの頂点の高さ ±8mm の胴の頂点 |
-| `waist` | Anny の `anthropometry.py` がウエストに使う頂点のループ |
-| `hip` | 基準体形で周囲長が最大になる高さ ±8mm の頂点 |
+| `chest` | 女性の基準体形でバストの頂点（胴の最も前に出た点） |
+| `underbust` | 女性の基準体形でバストの頂点の 3〜12cm 下の、周囲長が最小の高さ |
+| `waist` | Anny の `anthropometry.py` がウエストに使う頂点のループ（`a = b`, `t = 0`） |
+| `hip` | 基準体形で身長の 42〜58% の高さのうち周囲長が最大の高さ |
+| `upperarm` | 上腕のボーンの頂点の高さの中ほど（肩と肘の中間） |
+| `thigh` | 太もものボーンの頂点のうち、Anny の太ももの計測ターゲットで周囲長が最も変わる高さ |
+| `calf` | すねのボーンの頂点の高さの 40〜85% のうち周囲長が最大の高さ |
+| `ankle` | 床から 6〜16cm のうち周囲長が最小の高さ（すね・足のボーンの頂点） |
+
 ## 座標系・姿勢
 
 - 単位はメートル。three.js と同じ右手系で Y が上、+Z が体の正面、+X が体の左側
@@ -98,7 +119,8 @@ Anny の `weight` は頭の形をほとんど変えないので、顔の肉付�
 | `mean` | Float32 | `vertexCount × 3` | "young" の36体形の平均の頂点座標（x, y, z の順） |
 | `deltas` | Int16 | `36 × vertexCount × 3` | "young" の角ごとの平均からの差分。`deltaScale` を掛けるとメートルになる |
 | `ageDeltas` | Int8 | `36 × vertexCount × 3` | 角ごとの "old" − "young"。`age.deltaScale` を掛けるとメートルになる |
-| `localDeltas` | Int16 | `3 × 2 × vertexCount × 3` | 局所変形の差分（変形ごとに incr, decr の順）。`localDeltaScale` を掛けるとメートルになる |
+| `localIndex` | Uint16 | 各変形の `count` の合計 | 局所変形で動く頂点の番号（変形の順に連結） |
+| `localDeltas` | Int16 | `Σ 2 × count × 3` | 局所変形の差分（変形ごとに incr, decr の順）。`localDeltaScale` を掛けるとメートルになる |
 | `faceFatIndex` | Uint16 | 頭部の頂点数 | 顔の肉付きで動く頂点の番号 |
 | `faceFatDeltas` | Int16 | `2 × 頭部の頂点数 × 3` | 顔の肉付きの差分（+1, -1 の順）。`faceFat.deltaScale` を掛けるとメートルになる |
 

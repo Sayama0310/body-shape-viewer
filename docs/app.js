@@ -17,7 +17,18 @@ const sexInputs = document.querySelectorAll('input[name="sex"]');
 const bmiOut = document.getElementById('bmi');
 const bmiClassOut = document.getElementById('bmi-class');
 const girthSummary = document.getElementById('girth-summary');
-const GIRTH_LABELS = { chest: '胸囲', waist: 'ウエスト', hip: 'ヒップ' };
+const GIRTH_LABELS = {
+  chest: '胸囲',
+  underbust: 'アンダーバスト',
+  waist: 'ウエスト',
+  hip: 'ヒップ',
+  upperarm: '二の腕',
+  thigh: '太もも',
+  calf: 'ふくらはぎ',
+  ankle: '足首',
+};
+// 折りたたんだ欄の見出しに出す項目
+const SUMMARY_GIRTHS = ['chest', 'waist', 'hip'];
 
 // --- シーン ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -231,7 +242,7 @@ function updateBody({ quick = false } = {}) {
 function showGirths(girths) {
   const cm = (g) => (girths[g] * 100).toFixed(1);
   for (const g of GIRTHS) document.getElementById(`${g}-measured`).textContent = cm(g);
-  girthSummary.textContent = GIRTHS.map((g) => `${GIRTH_LABELS[g]} ${cm(g)}`).join('・');
+  girthSummary.textContent = SUMMARY_GIRTHS.map((g) => `${GIRTH_LABELS[g]} ${cm(g)}`).join('・');
 }
 
 // 入力が続いても合成は1フレームに1回にする（1回でも通常の更新が頼まれていれば通常の更新にする）
@@ -278,9 +289,7 @@ const state = {
   age: DEFAULT_AGE,
   muscle: null,
   sex: 'male',
-  chest: null,
-  waist: null,
-  hip: null,
+  ...Object.fromEntries(GIRTHS.map((g) => [g, null])),
 };
 
 function limits(field) {

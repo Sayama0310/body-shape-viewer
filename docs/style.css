@@ -300,7 +300,7 @@ input[type="range"] {
 
 .girth-row {
   display: grid;
-  grid-template-columns: 4.5em 1fr auto;
+  grid-template-columns: 7.5em 1fr auto;
   align-items: center;
   gap: 8px;
   margin-top: 6px;
@@ -448,3 +448,5 @@ input[type="range"] {
 .field.is-auto .num input[type="number"] {
   opacity: 0.55;
 }
+
+/* test */
