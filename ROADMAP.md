@@ -8,7 +8,7 @@
 
 ---
 
-## 1. [ ] 試作ビューア
+## 1. [x] 試作ビューア
 - `docs/index.html` と `docs/app.js`（ES module）を作る
 - Three.js を `docs/vendor/` に同梱し（バージョン固定、LICENSE も置く）、importmap で読む
 - プリミティブ（カプセル・球・円柱など）を組み合わせた簡易的な人型を表示する
