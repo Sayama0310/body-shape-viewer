@@ -7,7 +7,7 @@
 // VERSION と FILES は `node tools/update-sw.mjs` で更新する（手で書き換えない）。
 
 // <precache>
-const VERSION = '60614814a7';
+const VERSION = '2d878f22ce';
 const FILES = [
   './',
   'app.js',
