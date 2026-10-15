@@ -25,7 +25,7 @@ import torch
 import anny
 from anny.anthropometry import BASE_MESH_WAIST_VERTICES
 
-FORMAT_VERSION = 6
+FORMAT_VERSION = 7
 
 # 書き出す次元とアンカー値（Anny のフェノタイプ値, 0〜1）。順序がバイナリ内の角の並び順になる
 DIMS = {
@@ -230,12 +230,16 @@ def linearize_average_muscle_weight(corners):
     """筋肉量が平均（muscle = 0.5）の角のうち、体重が最小・最大のものを作り直す（Anny に忠実でない補正）。
 
     MPFB2 のターゲットでは「平均の筋肉量 × 最大（最小）体重」の変形がとても小さく（最大 2cm 程度）、
-    筋肉量が中くらいのときだけ体重がほとんど効かない。そこで、その角の体重方向の変形を
-    筋肉量が最小のときの体重方向の変形（脂肪がつく・落ちる方向）で置き換える:
+    筋肉量が中くらいのときだけ体重がほとんど効かない。そこで、その角の体重方向の変形を作り直す:
 
-        C(m=0.5, w) = C(m=0.5, w=0.5) + [C(m=0, w) − C(m=0, w=0.5)]
+        体重 最大（男性）: C(0.5, 1) = C(0.5, 0.5) + [C(0, 1) − C(0, 0.5)]
+        体重 最大（女性）: C(0.5, 1) = C(0.5, 0.5) + ([C(0, 1) − C(0, 0.5)] + [C♂(0, 1) − C♂(0, 0.5)]) / 2
+        体重 最小:         C(0.5, 0) = C(0.5, 0.5) + ([C(0, 0) − C(0, 0.5)] + 3 [C(1, 0) − C(1, 0.5)]) / 4
 
-    （筋肉量が最大のときの変形は筋肉ごと膨らむ形で、混ぜると肩・腕が不自然に盛り上がるため使わない）
+    太る方向は筋肉量が最小のときの変形（脂肪がつく方向）を使う（筋肉量が最大のときの変形は筋肉ごと膨らむ形で、
+    混ぜると肩・腕が不自然に盛り上がる）。女性の太る方向は、それだけだと胸・お腹が垂れて股が三角に開くので、
+    男性（同じ身長のアンカー）の太る方向と半分ずつ混ぜる。やせる方向は、筋肉量が最小のときの変形だけだと
+    腰の横がくびれておむつのような形になるので、最大のときの変形を 3/4 混ぜる
     """
     out = corners.copy()
     n_m, n_w, n_h = len(DIMS["muscle"]), len(DIMS["weight"]), len(DIMS["height"])
@@ -245,8 +249,14 @@ def linearize_average_muscle_weight(corners):
 
     for g in range(len(DIMS["gender"])):
         for h in range(n_h):
-            for w in (0, 2):  # 体重 最小 / 最大
-                out[c(g, 1, w, h)] = corners[c(g, 1, 1, h)] + (corners[c(g, 0, w, h)] - corners[c(g, 0, 1, h)])
+            mid = corners[c(g, 1, 1, h)]
+            fat = corners[c(g, 0, 2, h)] - corners[c(g, 0, 1, h)]
+            if DIMS["gender"][g] == 1.0:  # 女性
+                fat = (fat + corners[c(0, 0, 2, h)] - corners[c(0, 0, 1, h)]) / 2
+            out[c(g, 1, 2, h)] = mid + fat
+            out[c(g, 1, 0, h)] = mid + (
+                (corners[c(g, 0, 0, h)] - corners[c(g, 0, 1, h)]) + 3 * (corners[c(g, 2, 0, h)] - corners[c(g, 2, 1, h)])
+            ) / 4
     return out
 
 
