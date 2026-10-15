@@ -669,15 +669,43 @@ function render({ syncNumbers = true, quick = false, update = true } = {}) {
   if (update) scheduleBodyUpdate({ quick });
 }
 
+// --- 数値の表示・非表示 ---
+// 身長・体重・BMI は人に見られたくない値なので、ふだんは隠す（起動時は常に隠した状態で、保存しない）。
+// 表示しても、シートをたたむか、アプリが裏に回ったらまた隠す
+const privacyToggle = document.getElementById('privacy-toggle');
+let numbersShown = false;
+function setNumbersShown(shown) {
+  numbersShown = shown;
+  document.documentElement.classList.toggle('numbers-hidden', !shown);
+  privacyToggle.setAttribute('aria-pressed', String(shown));
+  privacyToggle.setAttribute('aria-label', shown ? '身長・体重を隠す' : '身長・体重を表示');
+  privacyToggle.querySelector('.privacy-text').textContent = shown ? '数値を隠す' : '数値を表示';
+  if (!shown && document.activeElement?.closest('.private')) document.activeElement.blur();
+  updateSummaries();
+}
+privacyToggle.addEventListener('click', () => setNumbersShown(!numbersShown));
+document.getElementById('sheet').addEventListener('snap', (e) => {
+  if (e.detail === 'collapsed') setNumbersShown(false);
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') setNumbersShown(false);
+});
+// 隠しているときに数値の欄を触ったら、入力できるよう表示する
+for (const el of document.querySelectorAll('.num.private input')) {
+  el.addEventListener('focus', () => {
+    if (!numbersShown) setNumbersShown(true);
+  });
+}
+
 // たたんだシートとグループの見出しに出す要約
 const SEX_LABELS = { male: '男性', female: '女性' };
 function updateSummaries() {
   const h = state.height / 100;
   const bmi = state.weight / (h * h);
-  const basic = `${SEX_LABELS[state.sex]} · ${state.height} cm · ${state.weight} kg`;
+  const basic = numbersShown ? `${SEX_LABELS[state.sex]} · ${state.height} cm · ${state.weight} kg` : SEX_LABELS[state.sex];
   const who = people.length > 1 || state.name.trim() ? `${activePerson().displayName(active)}: ` : '';
   document.getElementById('sheet-summary-text').textContent = who + basic;
-  document.getElementById('sheet-summary-bmi').textContent = `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}`;
+  document.getElementById('sheet-summary-bmi').textContent = numbersShown ? `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}` : '';
   document.getElementById('basic-summary').textContent = basic;
   document.getElementById('look-summary').textContent = `肌 ${SKIN_TONES[state.skin].label}`;
 }
@@ -848,6 +876,7 @@ nameInput.addEventListener('input', () => {
 });
 
 restore();
+setNumbersShown(false);
 renderTabs();
 render({ update: false });
 initScene();

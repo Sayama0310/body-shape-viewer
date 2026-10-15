@@ -715,3 +715,79 @@ input[type="range"]::-moz-range-thumb {
 .person-label.is-active {
   box-shadow: 0 0 0 2px var(--accent);
 }
+
+/* --- 数値の表示・非表示（身長・体重・BMI はふだん隠す） --- */
+.sheet-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sheet-row .people-tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.privacy-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  touch-action: manipulation;
+}
+
+.privacy-toggle svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.privacy-toggle[aria-pressed="true"] .slash {
+  display: none;
+}
+
+/* 隠しているときは数値の欄を「•••」で覆う（スライダーとボタンでの入力はそのまま使える） */
+.numbers-hidden .num.private {
+  position: relative;
+}
+
+.numbers-hidden .num.private input {
+  color: transparent;
+  caret-color: transparent;
+}
+
+.numbers-hidden .num.private::before {
+  content: "•••";
+  position: absolute;
+  left: 0;
+  width: 5.5em;
+  padding-right: 8px;
+  box-sizing: border-box;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--sub);
+  pointer-events: none;
+}
+
+.numbers-hidden .bmi.private output,
+.numbers-hidden .bmi.private .bmi-class {
+  display: none;
+}
+
+.numbers-hidden .bmi.private::after {
+  content: "•••";
+  margin-left: 4px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--sub);
+}

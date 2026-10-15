@@ -62,6 +62,7 @@ function setHeight(h) {
 function animateTo(name) {
   currentSnap = name;
   saveUi();
+  sheet.dispatchEvent(new CustomEvent('snap', { detail: name })); // app.js がたたんだときに数値を隠す
   const target = snaps[name];
   cancelAnimationFrame(anim?.raf);
   if (reduceMotion.matches) {
@@ -89,7 +90,7 @@ function nearestSnap(h) {
 let drag = null;
 
 grip.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.people-tabs')) return; // 人の切り替えのボタンはドラッグに使わない
+  if (e.target.closest('.people-tabs, .privacy-toggle')) return; // 人の切り替え・数値の表示のボタンはドラッグに使わない
   cancelAnimationFrame(anim?.raf);
   anim = null;
   drag = { id: e.pointerId, y0: e.clientY, h0: height, moved: false, samples: [{ t: e.timeStamp, y: e.clientY }] };

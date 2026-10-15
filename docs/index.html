@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" class="numbers-hidden">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -45,7 +45,14 @@
     <section id="sheet" class="sheet" aria-label="入力">
       <div id="sheet-grip" class="sheet-grip">
         <div class="sheet-handle" aria-hidden="true"></div>
-        <div class="people-tabs" id="people-tabs" role="tablist" aria-label="表示する人"></div>
+        <div class="sheet-row">
+          <div class="people-tabs" id="people-tabs" role="tablist" aria-label="表示する人"></div>
+          <!-- 身長・体重などの数値は、ふだんは隠しておき、押したときだけ表示する -->
+          <button type="button" id="privacy-toggle" class="privacy-toggle" aria-pressed="false" aria-label="身長・体重を表示">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path class="eye" d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle class="eye" cx="12" cy="12" r="3"/><path class="slash" d="M4 3l17 18"/></svg>
+            <span class="privacy-text">数値を表示</span>
+          </button>
+        </div>
         <button type="button" id="sheet-toggle" class="sheet-summary" aria-controls="sheet-body" aria-expanded="false">
           <span id="sheet-summary-text"></span>
           <span id="sheet-summary-bmi" class="sheet-summary-bmi"></span>
@@ -66,12 +73,12 @@
                 <label><input type="radio" name="sex" value="male" checked><span>男性</span></label>
                 <label><input type="radio" name="sex" value="female"><span>女性</span></label>
               </div>
-              <p class="bmi">BMI <output id="bmi">22.5</output> <span id="bmi-class" class="bmi-class">普通体重</span></p>
+              <p class="bmi private">BMI <output id="bmi">22.5</output> <span id="bmi-class" class="bmi-class">普通体重</span></p>
             </div>
             <div class="field">
               <div class="field-head">
                 <label for="height-num">身長</label>
-                <span class="num"><input type="number" id="height-num" inputmode="decimal" min="130" max="200" step="0.1" value="170"> cm</span>
+                <span class="num private"><input type="number" id="height-num" inputmode="decimal" min="130" max="200" step="0.1" value="170"> cm</span>
               </div>
               <div class="slider-row">
                 <button type="button" class="stepper" data-field="height" data-dir="-1" aria-label="身長を減らす">−</button>
@@ -82,7 +89,7 @@
             <div class="field">
               <div class="field-head">
                 <label for="weight-num">体重</label>
-                <span class="num"><input type="number" id="weight-num" inputmode="decimal" min="30" max="150" step="0.1" value="65"> kg</span>
+                <span class="num private"><input type="number" id="weight-num" inputmode="decimal" min="30" max="150" step="0.1" value="65"> kg</span>
               </div>
               <div class="slider-row">
                 <button type="button" class="stepper" data-field="weight" data-dir="-1" aria-label="体重を減らす">−</button>
@@ -110,6 +117,7 @@
   <dialog id="help" class="help">
     <h2>使い方</h2>
     <ul>
+      <li>身長・体重などの数値はふだんは隠れています。シート右上の「数値を表示」を押すと表示され、シートをたたむか、アプリを切り替えるとまた隠れます。</li>
       <li>身長・体重はスライダーか数値で入力します。性別で体形の傾向が変わります（年齢は30歳、筋肉量は平均として計算します）。</li>
       <li>シート上部の「＋ 2人目を追加」で別の人をもう1人並べられます。タブで入力する人を切り替え、名前（任意）は頭の上に表示されます。</li>
       <li>3D表示は1本指で回転、2本指のピンチで指の間に向かって拡大・縮小、2本指のドラッグで平行移動します。ダブルタップした部位に寄り、もう一度ダブルタップすると全身に戻ります。右上のボタンで正面・横・後ろ・全身に切り替えられます。</li>
