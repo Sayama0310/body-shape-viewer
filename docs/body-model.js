@@ -198,14 +198,13 @@ export class BodyModel {
     return list;
   }
 
-  // 歳を Anny の age（0〜1）に変換する（Anny の定義の区分線形）
+  // 歳を Anny の age（0〜1）に変換する。Anny の定義（age.yearsToAnny）では 18〜64歳が 0.77〜0.83 に詰まっていて
+  // 20〜80歳の差がほとんど出ないので、独自に AGE_YEARS の2つの歳を "young" / "old" のアンカーに当て、間を線形にする
   annyAge(years) {
-    const { years: ys, anny: as } = this.yearsToAnny;
-    if (years <= ys[0]) return as[0];
-    for (let i = 1; i < ys.length; i++) {
-      if (years <= ys[i]) return as[i - 1] + ((years - ys[i - 1]) / (ys[i] - ys[i - 1])) * (as[i] - as[i - 1]);
-    }
-    return as[as.length - 1];
+    const [y0, y1] = AGE_YEARS;
+    const [a0, a1] = this.ageAnchors;
+    const t = Math.min(Math.max((years - y0) / (y1 - y0), 0), 1);
+    return a0 + t * (a1 - a0);
   }
 
   // params の頂点を out に書き込む。
@@ -406,6 +405,8 @@ export class BodyModel {
 // 顔の肉付きは BMI に連動させる（Anny の weight は頭の形をほとんど変えないため）。
 // quick が真なら、周囲長の局所変形と muscle を前回の値のまま身長・体重だけ合わせる（スライダー操作中用）
 export const DEFAULT_AGE = 30;
+// 年齢のアンカー（"young", "old"）に当てる歳（data/README.md の「年齢」）
+export const AGE_YEARS = [25, 90];
 
 export function createShapeMapper(model) {
   const centerBmi = {};

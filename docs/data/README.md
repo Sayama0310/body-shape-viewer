@@ -5,12 +5,11 @@
 
 | ファイル | 中身 |
 |---|---|
-| `anny-body.json` | メタデータ（頂点数・次元・体格の傾向ごとの形状ファイル・周囲長の計測断面・バイナリ内の配置） |
+| `anny-body.json` | メタデータ（頂点数・次元・形状ファイル・周囲長の計測断面・バイナリ内の配置） |
 | `anny-body.bin` | 共通部分: 三角形・局所変形と顔の肉付きの差分（約 0.26MB） |
-| `anny-shape-<傾向>.bin` | 体格の傾向ごとの形状: 平均形状・各体形との差分・年齢の差分（各 約 4.6MB）。`<傾向>` は `standard` / `african` / `asian` / `caucasian` |
+| `anny-shape-standard.bin` | 形状: 平均形状・各体形との差分・年齢の差分（約 4.6MB） |
 
-アプリは共通部分と、選ばれた傾向の形状ファイルだけを読む。Service Worker は `standard` だけを最初にキャッシュし、
-ほかは選ばれて取得したときにキャッシュに入れる。
+形状ファイルは体格の傾向（下の「体格の傾向」）ごとに分けられる形式だが、今は `standard` だけを書き出している。
 
 `formatVersion` は 6。
 - 5 からの変更: 筋肉量が平均（`muscle = 0.5`）の角のうち体重が最小・最大のものを補正した（下の「Anny からの補正」）。ファイルの形式は同じ
@@ -36,7 +35,9 @@ Anny の形状は、フェノタイプ（0〜1 の値）ごとに決まったア
 
 年齢（`age.anchors`）は Anny の `age` で 2/3（"young"）と 1（"old"）。
 Anny の定義（`shape_calibration` の `morphological_age_mapping`、`age.yearsToAnny` に同じ値を入れてある）では、
-歳 → `age` は区分線形で 16歳 = 0.67, 18歳 = 0.77, 64歳 = 0.83, 110歳 = 1.0。20〜80歳は 0.773〜0.889 で、この2つのアンカーの間に入る。
+歳 → `age` は区分線形で 16歳 = 0.67, 18歳 = 0.77, 64歳 = 0.83, 110歳 = 1.0。これだと 20〜80歳が 0.773〜0.889 に詰まり、見た目の差がほとんど出ない。
+そこでアプリでは Anny の定義を使わず、**25歳 = "young"、90歳 = "old"** とし、間を線形にしている（`body-model.js` の `AGE_YEARS`、25歳未満は "young" のまま）。
+25歳は MakeHuman の元の "young" の定義に合わせた。Anny の較正からは外れる（80歳は Anny の約95歳相当の体形になる）。
 
 `weight` や `height` は Anny の内部パラメータで、kg や cm ではない。
 実際の身長は頂点の Y 方向の幅から、体重はメッシュの体積 × 密度から求める（Anny の `anthropometry.py` は密度 980 kg/m³ を使っている）。
@@ -69,8 +70,8 @@ MPFB2 のターゲットでは「平均の筋肉量 × 最大（最小）体重�
 ### 体格の傾向
 
 `shapes.<傾向>.race` が、その傾向の形状を書き出したときの Anny のフェノタイプ `african` / `asian` / `caucasian`。
-`standard` は3つとも Anny の既定値（等分の混合）、ほかはその系統だけ 1、残りを 0 にしたもの（`proportions` などそれ以外は同じ）。
-局所変形・顔の肉付き・周囲長の計測断面は `standard` の上で取ったものを全傾向で共有する。
+今あるのは `standard`（3つとも Anny の既定値 = 等分の混合）だけ。書き出しスクリプトの `VARIANTS` に足せば、
+その傾向の `anny-shape-<傾向>.bin` が増える（局所変形・顔の肉付き・周囲長の計測断面は `standard` の上で取ったものを共有する）。
 
 ### 局所変形（周囲長の調整）
 
@@ -161,15 +162,3 @@ python tools/export/export_anny.py   # docs/data/ に上書きする
 初回は Anny がアセットを解析してキャッシュを作るため数分かかる（キャッシュ先は `ANNY_CACHE_DIR`、既定は `~/.cache/anny/`）。
 フォーマットを変えたら `anny-body.json` の `formatVersion` を上げ、このファイルを更新する。
 
-## 肌の塗り分け（`skin-regions.*`）
-
-`tools/export/export_skin.py` が書き出す。Anny に同梱の MPFB2 の領域マスク（`data/mpfb2/textures/mpfb_*.jpg`, CC0）を
-各頂点の UV で読み取った、頂点ごとの部位の重み。
-
-| ファイル | 中身 |
-|---|---|
-| `skin-regions.json` | `channels`（並び順: `lips`, `nails`, `areolae`, `eyelids`）、頂点数 |
-| `skin-regions.bin` | Uint8 `vertexCount × channels`。0〜255 = その部位である度合い |
-
-アプリは選んだ肌の色から部位ごとの色（唇は赤み、爪は明るく、など）を作り、この重みで混ぜて頂点色にする。
-テクスチャそのものは描画に使わない（UV で頂点を分ける必要がなく、iPhone でも負荷が増えない）。

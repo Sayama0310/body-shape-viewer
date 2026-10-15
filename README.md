@@ -16,9 +16,9 @@ iPhone の Safari で開き「ホーム画面に追加」して使う PWA で、
 ## 使い方・できること
 
 - **基本**: 性別・身長・体重をスライダー、数値入力、−／＋ボタンで入力すると体形が変わる。名前（任意）も付けられる
-- **年齢・体格**: 年齢、筋肉量（自動または手動）、体格の傾向（標準・アフリカ系・アジア系・ヨーロッパ系）
+- **年齢・体格**: 年齢、筋肉量（自動または手動）
 - **見た目**: 肌の色
-- **服装**: 上（タンクトップ・トップス）と下（ショートジーンズ・ショーツ）。服は体形に合わせて変形する
+- **服装**: 着る / 着ないを選ぶ（着るとタンクトップとショートジーンズ）。服は体形に合わせて変形する
 - **周囲長（任意）**: 胸囲・アンダーバスト・ウエスト・ヒップ・二の腕・太もも・ふくらはぎ・足首。入れた値に体形を近づける。空欄ならモデルの値を表示する
 - **2人表示**: シート上部の「＋ 2人目を追加」で別の人を横に並べられる。タブで入力する人を切り替え、名前は頭の上に表示される
 - **3D操作**: 1本指で回転、ピンチで指の間に向かって拡大・縮小、2本指ドラッグで平行移動。ダブルタップした部位に寄り、もう一度ダブルタップで全身に戻る。右上のボタンで正面・横・後ろ・全身に切り替え
@@ -37,8 +37,8 @@ iPhone の Safari で開き「ホーム画面に追加」して使う PWA で、
 | 対象 | ライセンス |
 |---|---|
 | 体形モデル [Anny](https://github.com/naver/anny) 0.6.1（NAVER LABS Europe）から書き出したデータ | Apache License 2.0 |
-| MakeHuman / MPFB2 のアセット（Anny が利用する形状、肌の領域マスク） | CC0 1.0 |
-| 服（MakeHuman のアセット。作者: Mindfront, punkduck, wolgade） | CC BY 4.0 / CC BY 3.0 / CC0 1.0 |
+| MakeHuman / MPFB2 のアセット（Anny が利用する形状） | CC0 1.0 |
+| 服（MakeHuman のアセット。作者: Mindfront, punkduck） | CC BY 4.0 / CC BY 3.0 |
 | [three.js](https://threejs.org/) r170 | MIT |
 
 詳細（変更点・作者ごとの表記・ライセンス全文）は [`docs/licenses/README.md`](docs/licenses/README.md)。
@@ -91,11 +91,8 @@ CLAUDE.md, ROADMAP.md 開発方針とタスク一覧
 python -m venv .venv && . .venv/bin/activate
 pip install -r tools/export/requirements.txt
 
-# 体形データ（docs/data/anny-body.*, anny-shape-*.bin）
+# 体形データ（docs/data/anny-body.*, anny-shape-standard.bin）
 python tools/export/export_anny.py
-
-# 肌の塗り分け用の領域（docs/data/skin-regions.*）
-python tools/export/export_skin.py
 
 # 服（docs/data/assets/）。入力は npm の makehuman-data
 npm pack makehuman-data@0.0.2 && mkdir mh && tar xzf makehuman-data-0.0.2.tgz -C mh

@@ -298,8 +298,8 @@ helpDialog.addEventListener('cancel', (e) => {
 });
 
 // --- 体形 ---
-// 肌の色は頂点色で塗る（唇・爪などの部位ごとに少し色を変える）
-const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.62, metalness: 0 });
+// 体の材質（肌の色は人ごとに変えるので、人ごとに複製して色を付ける）
+const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.62, metalness: 0 });
 
 // 肌の色のプリセット（明るい → 暗い）。4 番目がこれまでの色
 const SKIN_TONES = [
@@ -314,38 +314,16 @@ const SKIN_TONES = [
 ];
 const DEFAULT_SKIN = 3;
 
-async function loadSkinRegions() {
-  try {
-    const [meta, bin] = await Promise.all([
-      fetch(new URL('./data/skin-regions.json', import.meta.url)).then((r) => r.json()),
-      fetch(new URL('./data/skin-regions.bin', import.meta.url)).then((r) => r.arrayBuffer()),
-    ]);
-    return { channels: meta.channels, weights: new Uint8Array(bin) };
-  } catch (err) {
-    console.error(err);
-    return null; // 塗り分けなしで続ける
-  }
-}
-
-// 部位ごとの色: 肌の色に掛ける係数（線形の色空間）か、混ぜる色
-const REGION_TINTS = {
-  lips: (c) => c.clone().multiply(new THREE.Color(0.82, 0.52, 0.52)),
-  nails: (c) => c.clone().lerp(new THREE.Color(1, 0.86, 0.84), 0.45),
-  areolae: (c) => c.clone().multiply(new THREE.Color(0.72, 0.56, 0.52)),
-  eyelids: (c) => c.clone().multiplyScalar(0.88),
-};
-
 function showStatus(text) {
   if (text) statusEl.textContent = text; // 消すときは文字を残したままフェードアウトさせる
   statusEl.classList.toggle('is-shown', Boolean(text));
   statusEl.setAttribute('aria-hidden', String(!text));
 }
 
-// 全員で共有するデータ（体形データの共通部分・肌の塗り分け・服の一覧）
+// 全員で共有するデータ（体形データの共通部分・服の一覧）
 let shared = null;
 let catalog = [];
 const loadedAssets = new Map(); // id -> Promise<Attachment>（人ごとに別のメッシュを作るので、読み込んだデータだけ共有）
-const SLOTS = ['top', 'bottom'];
 
 function defaultState(index) {
   return {
@@ -356,10 +334,8 @@ function defaultState(index) {
     muscle: null, // 0〜100。自動なら null
     sex: index === 0 ? 'male' : 'female',
     ...Object.fromEntries(GIRTHS.map((g) => [g, null])), // 周囲長は未入力なら null
-    top: null, // 服装（アセットの id、なしなら null）
-    bottom: null,
+    clothed: false, // 服を着るか（着るなら data/assets の服をすべて着る）
     skin: DEFAULT_SKIN, // 肌の色（SKIN_TONES の番号）
-    variant: 'standard', // 体格の傾向（data の shapes のキー）
   };
 }
 
@@ -371,8 +347,7 @@ class Person {
     this.girths = null;
     this.inRange = true;
     this.worn = [];
-    this.morph = null;
-    this.request = { outfit: 0, variant: 0 };
+    this.request = { outfit: 0 };
     this.x = 0; // 並べたときの位置（目標）
     this.label = document.createElement('div');
     this.label.className = 'person-label';
@@ -382,20 +357,16 @@ class Person {
   async init() {
     const { meta, shared: buffer } = shared.body;
     const model = new BodyModel(meta, buffer);
-    const variant = this.state.variant in meta.shapes ? this.state.variant : 'standard';
-    model.setShape(variant, await loadShapeBuffer(meta, variant));
-    this.state.variant = variant; // 読めなかった傾向は標準に戻る
+    model.setShape('standard', await loadShapeBuffer(meta, 'standard'));
     this.model = model;
     this.mapShape = createShapeMapper(model);
     this.positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
-    this.colors = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', this.positions);
-    geometry.setAttribute('color', this.colors);
     this.fullIndex = new THREE.BufferAttribute(model.index, 1);
     this.visibleIndex = this.fullIndex;
     geometry.setIndex(this.fullIndex);
-    this.mesh = new THREE.Mesh(geometry, bodyMaterial);
+    this.mesh = new THREE.Mesh(geometry, bodyMaterial.clone());
     this.mesh.castShadow = true;
     // 体と、体に追従するアセット（服・髪）をまとめて接地させる
     this.figure = new THREE.Group();
@@ -410,6 +381,7 @@ class Person {
     if (this.figure) {
       scene.remove(this.figure);
       this.mesh.geometry.dispose();
+      this.mesh.material.dispose();
       for (const a of this.worn) a.mesh.geometry.dispose();
     }
     this.label.remove();
@@ -417,23 +389,7 @@ class Person {
 
   applySkin() {
     if (!this.model) return;
-    const base = new THREE.Color(SKIN_TONES[this.state.skin].hex);
-    const colors = this.colors.array;
-    const regions = shared.skinRegions;
-    const tints = regions ? regions.channels.map((name) => REGION_TINTS[name]?.(base) ?? base) : [];
-    const n = this.model.vertexCount;
-    const c = new THREE.Color();
-    for (let i = 0; i < n; i++) {
-      c.copy(base);
-      for (let k = 0; k < tints.length; k++) {
-        const w = regions.weights[i * tints.length + k] / 255;
-        if (w > 0) c.lerp(tints[k], w);
-      }
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    this.colors.needsUpdate = true;
+    this.mesh.material.color.set(SKIN_TONES[this.state.skin].hex);
   }
 
   // 入力から体形を合成する。quick: スライダー操作中（周囲長の調整は前回のまま身長・体重だけ合わせる）
@@ -452,7 +408,6 @@ class Person {
       },
       { quick },
     );
-    this.morph = null; // 入力が変わったら、途中の切り替えアニメーションは終わりにして新しい形にする
     this.model.blend(shape.params, this.positions.array);
     this.autoMuscle = Math.round(shape.params.muscle * 100);
     const { minY, girths, height } = this.model.measure(this.positions.array);
@@ -482,7 +437,7 @@ class Person {
   async applyOutfit() {
     if (!this.model || !catalog.length) return;
     const request = ++this.request.outfit;
-    const ids = SLOTS.map((slot) => this.state[slot]).filter(Boolean);
+    const ids = this.state.clothed ? catalog.map((a) => a.id) : [];
     let next;
     try {
       next = await Promise.all(ids.map(async (id) => this.worn.find((a) => a.info.id === id) ?? Attachment.fromLoaded(await loadAssetData(id))));
@@ -504,45 +459,6 @@ class Person {
     this.visibleIndex = new THREE.BufferAttribute(visibleBodyIndex(this.model.index, this.worn), 1);
     this.mesh.geometry.setIndex(this.visibleIndex);
     for (const a of this.worn) a.update(this.positions.array);
-  }
-
-  // 選んだ傾向の形状データを読み込み（初めてならネットワークから）、今の体形から新しい体形へなめらかに変える
-  async applyVariant() {
-    if (!this.model || this.model.variant === this.state.variant) return;
-    const request = ++this.request.variant;
-    const from = { positions: this.positions.array.slice(), y: this.figure.position.y };
-    try {
-      showStatus('体格の傾向のデータを読み込み中…');
-      await this.model.loadShape(this.state.variant);
-    } catch (err) {
-      console.error(err);
-      showStatus('データを読み込めませんでした（オフラインでは、一度選んだことのある傾向だけ使えます）');
-      return;
-    }
-    if (request !== this.request.variant) return;
-    this.mapShape = createShapeMapper(this.model);
-    this.update();
-    afterUpdate(this);
-    if (reduceMotion.matches) return;
-    this.morph = {
-      from,
-      to: { positions: this.positions.array.slice(), y: this.figure.position.y },
-      start: performance.now(),
-      duration: 600,
-    };
-    this.stepMorph(performance.now());
-  }
-
-  stepMorph(now) {
-    const m = this.morph;
-    if (!m) return;
-    const t = Math.min((now - m.start) / m.duration, 1);
-    const e = ease(t);
-    const out = this.positions.array;
-    for (let i = 0; i < out.length; i++) out[i] = m.from.positions[i] + (m.to.positions[i] - m.from.positions[i]) * e;
-    this.figure.position.y = m.from.y + (m.to.y - m.from.y) * e;
-    this.refreshGeometry();
-    if (t >= 1) this.morph = null;
   }
 
   displayName(index) {
@@ -716,8 +632,7 @@ function updateLabels() {
 async function initScene() {
   showStatus('体形データを読み込み中…');
   try {
-    const [body, skinRegions] = await Promise.all([loadBodyData(), loadSkinRegions()]);
-    shared = { body, skinRegions };
+    shared = { body: await loadBodyData() };
   } catch (err) {
     console.error(err);
     showStatus('体形データを読み込めませんでした。再読み込みしてください。');
@@ -729,30 +644,29 @@ async function initScene() {
 }
 
 // --- 服装（体に追従するアセット） ---
-// 選択肢は data/assets/index.json から作る。アセット本体は選ばれたときに読み込む
-const slotSelects = Object.fromEntries(SLOTS.map((slot) => [slot, document.getElementById(`outfit-${slot}`)]));
+// 着る服は data/assets/index.json の一覧。アセット本体は着たときに読み込む
+const outfitInputs = [...document.querySelectorAll('input[name=outfit]')];
 
 async function initWardrobe() {
   try {
     catalog = await loadAssetCatalog();
   } catch (err) {
     console.error(err);
+    for (const input of outfitInputs) input.disabled = true;
     return;
-  }
-  for (const slot of SLOTS) {
-    const select = slotSelects[slot];
-    for (const a of catalog.filter((x) => x.slot === slot)) select.add(new Option(a.label, a.id));
-    for (const p of people) if (!catalog.some((a) => a.id === p.state[slot])) p.state[slot] = null;
-    select.value = state[slot] ?? '';
-    select.addEventListener('change', () => {
-      state[slot] = select.value || null;
-      save();
-      updateSummaries();
-      activePerson().applyOutfit();
-    });
   }
   updateSummaries();
   for (const p of people) p.applyOutfit();
+}
+
+for (const input of outfitInputs) {
+  input.addEventListener('change', () => {
+    if (!input.checked) return;
+    state.clothed = input.value === 'on';
+    save();
+    updateSummaries();
+    activePerson().applyOutfit();
+  });
 }
 
 // --- 入力 ---
@@ -766,7 +680,6 @@ const fields = [
 const muscleField = fields[3];
 const muscleAuto = document.getElementById('muscle-auto');
 const muscleFieldEl = document.getElementById('muscle-field');
-const variantSelect = document.getElementById('variant');
 const skinPicker = document.getElementById('skin-picker');
 
 // 筋肉量が自動のときは、自動で決めた値をスライダーと数値に表示する
@@ -817,9 +730,8 @@ function render({ syncNumbers = true, quick = false, update = true } = {}) {
   muscleFieldEl.classList.toggle('is-auto', state.muscle == null);
   if (syncNumbers) for (const f of girthFields) f.number.value = state[f.key] ?? '';
   for (const input of sexInputs) input.checked = input.value === state.sex;
-  variantSelect.value = state.variant;
   for (const input of skinPicker.querySelectorAll('input')) input.checked = Number(input.value) === state.skin;
-  for (const slot of SLOTS) slotSelects[slot].value = state[slot] ?? '';
+  for (const input of outfitInputs) input.checked = (input.value === 'on') === state.clothed;
   if (document.activeElement !== nameInput) nameInput.value = state.name;
 
   const h = state.height / 100;
@@ -842,11 +754,8 @@ function updateSummaries() {
   document.getElementById('sheet-summary-bmi').textContent = `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}`;
   document.getElementById('basic-summary').textContent = basic;
   const muscle = state.muscle == null ? `自動 ${autoMuscle()}` : state.muscle;
-  const variant = [...variantSelect.options].find((o) => o.value === state.variant)?.textContent ?? '';
-  document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle} · ${variant}`;
-  const label = (id) => catalog.find((a) => a.id === id)?.label;
-  const outfit = SLOTS.map((slot) => label(state[slot])).filter(Boolean);
-  document.getElementById('outfit-summary').textContent = outfit.length ? outfit.join(' · ') : 'なし';
+  document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle}`;
+  document.getElementById('outfit-summary').textContent = state.clothed ? catalog.map((a) => a.label).join(' · ') || '着る' : 'なし';
   document.getElementById('look-summary').textContent = `肌 ${SKIN_TONES[state.skin].label}`;
 }
 
@@ -869,9 +778,9 @@ function restoreState(saved, index) {
   if (SEXES.includes(saved.sex)) s.sex = saved.sex;
   if (typeof saved.name === 'string') s.name = saved.name.slice(0, 12);
   if (Number.isInteger(saved.skin) && saved.skin >= 0 && saved.skin < SKIN_TONES.length) s.skin = saved.skin;
-  if ([...variantSelect.options].some((o) => o.value === saved.variant)) s.variant = saved.variant;
-  // 服装は一覧を読み込んだ後に、存在する id か確かめる
-  for (const slot of SLOTS) if (typeof saved[slot] === 'string') s[slot] = saved[slot];
+  // 服装。以前の形式（上下ごとのアセットの id）は、どちらかを着ていたら「着る」にする
+  if (typeof saved.clothed === 'boolean') s.clothed = saved.clothed;
+  else s.clothed = typeof saved.top === 'string' || typeof saved.bottom === 'string';
   for (const f of girthFields) {
     const v = Number(saved[f.key]);
     if (saved[f.key] != null && isValid(f, v)) s[f.key] = round1(v);
@@ -1020,13 +929,6 @@ muscleAuto.addEventListener('change', () => {
   save();
 });
 
-variantSelect.addEventListener('change', () => {
-  state.variant = variantSelect.value;
-  updateSummaries();
-  save();
-  activePerson().applyVariant();
-});
-
 // 肌の色の選択肢
 SKIN_TONES.forEach((tone, i) => {
   const label = document.createElement('label');
@@ -1099,7 +1001,6 @@ renderer.setAnimationLoop((now) => {
   lastFrame = now;
   updateViewport();
   stepTween(now);
-  for (const p of people) p.stepMorph(now);
   stepLayout(dt);
   controls.update();
   renderer.render(scene, camera);

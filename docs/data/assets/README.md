@@ -61,6 +61,6 @@ MakeHuman のプロキシ（服・髪）は、各頂点を「MakeHuman の基本
 ## アセットを増やす手順
 
 1. `makehuman-data` のメタデータ（`metadata.license`）で、ライセンスが CC0 / CC BY であることを確認する
-2. `tools/export/export_assets.py` の `ASSETS` に追加する（`kind` は `clothes` / `hair`、`slot` は選択欄の種類）
+2. `tools/export/export_assets.py` の `ASSETS` に追加する（`kind` は `clothes`、`slot` は `top` / `bottom`）。アプリは「着る」のとき一覧の服をすべて着る
 3. `python tools/export/export_assets.py --source <makehuman-data>/public/data/proxies` を実行する
 4. `docs/licenses/README.md` に出典（作者・ライセンス）を追記し、`node tools/update-sw.mjs` を実行する
