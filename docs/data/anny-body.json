@@ -1,5 +1,5 @@
 {
-  "formatVersion": 4,
+  "formatVersion": 5,
   "source": "anny 0.6.1 (topology=anny, rig=anny)",
   "vertexCount": 13718,
   "faceCount": 27420,
@@ -40,7 +40,6 @@
       0.6666666666666666,
       1.0
     ],
-    "deltaScale": 0.00195846592284346,
     "yearsToAnny": {
       "years": [
         0.0,
@@ -84,7 +83,172 @@
       0.0
     ]
   },
-  "deltaScale": 1.2142751212525267e-05,
+  "shapes": {
+    "standard": {
+      "label": "\u6a19\u6e96",
+      "race": {},
+      "file": "anny-shape-standard.bin",
+      "layout": {
+        "mean": {
+          "offset": 0,
+          "byteLength": 164616,
+          "type": "float32",
+          "shape": [
+            13718,
+            3
+          ]
+        },
+        "deltas": {
+          "offset": 164616,
+          "byteLength": 2963088,
+          "type": "int16",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        },
+        "ageDeltas": {
+          "offset": 3127704,
+          "byteLength": 1481544,
+          "type": "int8",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        }
+      },
+      "deltaScale": 1.2142751212525267e-05,
+      "ageDeltaScale": 0.00195846592284346
+    },
+    "african": {
+      "label": "\u30a2\u30d5\u30ea\u30ab\u7cfb",
+      "race": {
+        "african": 1.0,
+        "asian": 0.0,
+        "caucasian": 0.0
+      },
+      "file": "anny-shape-african.bin",
+      "layout": {
+        "mean": {
+          "offset": 0,
+          "byteLength": 164616,
+          "type": "float32",
+          "shape": [
+            13718,
+            3
+          ]
+        },
+        "deltas": {
+          "offset": 164616,
+          "byteLength": 2963088,
+          "type": "int16",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        },
+        "ageDeltas": {
+          "offset": 3127704,
+          "byteLength": 1481544,
+          "type": "int8",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        }
+      },
+      "deltaScale": 1.233226665991466e-05,
+      "ageDeltaScale": 0.001960091692403609
+    },
+    "asian": {
+      "label": "\u30a2\u30b8\u30a2\u7cfb",
+      "race": {
+        "african": 0.0,
+        "asian": 1.0,
+        "caucasian": 0.0
+      },
+      "file": "anny-shape-asian.bin",
+      "layout": {
+        "mean": {
+          "offset": 0,
+          "byteLength": 164616,
+          "type": "float32",
+          "shape": [
+            13718,
+            3
+          ]
+        },
+        "deltas": {
+          "offset": 164616,
+          "byteLength": 2963088,
+          "type": "int16",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        },
+        "ageDeltas": {
+          "offset": 3127704,
+          "byteLength": 1481544,
+          "type": "int8",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        }
+      },
+      "deltaScale": 1.1889909550837771e-05,
+      "ageDeltaScale": 0.002117364397644366
+    },
+    "caucasian": {
+      "label": "\u30e8\u30fc\u30ed\u30c3\u30d1\u7cfb",
+      "race": {
+        "african": 0.0,
+        "asian": 0.0,
+        "caucasian": 1.0
+      },
+      "file": "anny-shape-caucasian.bin",
+      "layout": {
+        "mean": {
+          "offset": 0,
+          "byteLength": 164616,
+          "type": "float32",
+          "shape": [
+            13718,
+            3
+          ]
+        },
+        "deltas": {
+          "offset": 164616,
+          "byteLength": 2963088,
+          "type": "int16",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        },
+        "ageDeltas": {
+          "offset": 3127704,
+          "byteLength": 1481544,
+          "type": "int8",
+          "shape": [
+            36,
+            13718,
+            3
+          ]
+        }
+      },
+      "deltaScale": 1.222811011826027e-05,
+      "ageDeltaScale": 0.0019619836548167213
+    }
+  },
   "localChanges": [
     {
       "name": "chest",
@@ -1859,37 +2023,8 @@
         3
       ]
     },
-    "mean": {
-      "offset": 164520,
-      "byteLength": 164616,
-      "type": "float32",
-      "shape": [
-        13718,
-        3
-      ]
-    },
-    "deltas": {
-      "offset": 329136,
-      "byteLength": 2963088,
-      "type": "int16",
-      "shape": [
-        36,
-        13718,
-        3
-      ]
-    },
-    "ageDeltas": {
-      "offset": 3292224,
-      "byteLength": 1481544,
-      "type": "int8",
-      "shape": [
-        36,
-        13718,
-        3
-      ]
-    },
     "localIndex": {
-      "offset": 4773768,
+      "offset": 164520,
       "byteLength": 11524,
       "type": "uint16",
       "shape": [
@@ -1897,7 +2032,7 @@
       ]
     },
     "localDeltas": {
-      "offset": 4785292,
+      "offset": 176044,
       "byteLength": 69144,
       "type": "int16",
       "shape": [
@@ -1905,7 +2040,7 @@
       ]
     },
     "faceFatIndex": {
-      "offset": 4854436,
+      "offset": 245188,
       "byteLength": 2012,
       "type": "uint16",
       "shape": [
@@ -1913,7 +2048,7 @@
       ]
     },
     "faceFatDeltas": {
-      "offset": 4856448,
+      "offset": 247200,
       "byteLength": 12072,
       "type": "int16",
       "shape": [

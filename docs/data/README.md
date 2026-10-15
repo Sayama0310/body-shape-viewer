@@ -5,10 +5,16 @@
 
 | ファイル | 中身 |
 |---|---|
-| `anny-body.json` | メタデータ（頂点数・次元・量子化スケール・周囲長の計測断面・バイナリ内の配置） |
-| `anny-body.bin` | 三角形・平均形状・各体形との差分・年齢の差分・局所変形と顔の肉付きの差分（約 4.9MB） |
+| `anny-body.json` | メタデータ（頂点数・次元・体格の傾向ごとの形状ファイル・周囲長の計測断面・バイナリ内の配置） |
+| `anny-body.bin` | 共通部分: 三角形・局所変形と顔の肉付きの差分（約 0.26MB） |
+| `anny-shape-<傾向>.bin` | 体格の傾向ごとの形状: 平均形状・各体形との差分・年齢の差分（各 約 4.6MB）。`<傾向>` は `standard` / `african` / `asian` / `caucasian` |
 
-`formatVersion` は 4。
+アプリは共通部分と、選ばれた傾向の形状ファイルだけを読む。Service Worker は `standard` だけを最初にキャッシュし、
+ほかは選ばれて取得したときにキャッシュに入れる。
+
+`formatVersion` は 5。
+- 4 からの変更: 形状（`mean`, `deltas`, `ageDeltas`）を体格の傾向ごとのファイル `anny-shape-<傾向>.bin` に分けた。
+  配置とスケールは `shapes.<傾向>.layout` / `deltaScale` / `ageDeltaScale`（以前の `deltaScale`, `age.deltaScale` はここへ移った）
 - 3 からの変更: 周囲長を8項目に増やした。局所変形を疎な形式（`localIndex` + `localDeltas`、`localChanges[k].start` / `count`）にし、
   差分を静止姿勢で取ってスキニングの回転で姿勢側に回すようにした。周囲長の計測を頂点の帯から断面（`measurements.<name>.a` / `b` / `t`）に変えた
 - 2 からの変更: 年齢の次元（`age`, `ageDeltas`）と顔の肉付き（`faceFat`, `faceFatIndex`, `faceFatDeltas`）を追加。基準の年齢を16歳相当（`age = 2/3`）から30歳に変更
@@ -47,6 +53,12 @@ Anny の定義（`shape_calibration` の `morphological_age_mapping`、`age.year
 角の番号 `c = ((g × 3 + m) × 3 + w) × 2 + h`（g, m, w, h は各次元のアンカー番号）。
 
 補間結果と Anny 本体の出力の差は最大 9mm 程度（腕を下ろす回転が体形によって少し変わるため）。
+
+### 体格の傾向
+
+`shapes.<傾向>.race` が、その傾向の形状を書き出したときの Anny のフェノタイプ `african` / `asian` / `caucasian`。
+`standard` は3つとも Anny の既定値（等分の混合）、ほかはその系統だけ 1、残りを 0 にしたもの（`proportions` などそれ以外は同じ）。
+局所変形・顔の肉付き・周囲長の計測断面は `standard` の上で取ったものを全傾向で共有する。
 
 ### 局所変形（周囲長の調整）
 
@@ -116,9 +128,9 @@ Anny の `weight` は頭の形をほとんど変えないので、顔の肉付�
 | `layout` の名前 | 型 | 要素数 | 中身 |
 |---|---|---|---|
 | `faces` | Uint16 | `faceCount × 3` | 三角形の頂点番号 |
-| `mean` | Float32 | `vertexCount × 3` | "young" の36体形の平均の頂点座標（x, y, z の順） |
-| `deltas` | Int16 | `36 × vertexCount × 3` | "young" の角ごとの平均からの差分。`deltaScale` を掛けるとメートルになる |
-| `ageDeltas` | Int8 | `36 × vertexCount × 3` | 角ごとの "old" − "young"。`age.deltaScale` を掛けるとメートルになる |
+| `mean`（形状ファイル） | Float32 | `vertexCount × 3` | "young" の36体形の平均の頂点座標（x, y, z の順） |
+| `deltas`（形状ファイル） | Int16 | `36 × vertexCount × 3` | "young" の角ごとの平均からの差分。`deltaScale` を掛けるとメートルになる |
+| `ageDeltas`（形状ファイル） | Int8 | `36 × vertexCount × 3` | 角ごとの "old" − "young"。`age.deltaScale` を掛けるとメートルになる |
 | `localIndex` | Uint16 | 各変形の `count` の合計 | 局所変形で動く頂点の番号（変形の順に連結） |
 | `localDeltas` | Int16 | `Σ 2 × count × 3` | 局所変形の差分（変形ごとに incr, decr の順）。`localDeltaScale` を掛けるとメートルになる |
 | `faceFatIndex` | Uint16 | 頭部の頂点数 | 顔の肉付きで動く頂点の番号 |

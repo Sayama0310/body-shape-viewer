@@ -267,7 +267,8 @@ function showStatus(text) {
 async function initBody() {
   showStatus('体形データを読み込み中…');
   try {
-    const [model, skinRegions] = await Promise.all([loadBodyModel(), loadSkinRegions()]);
+    const [model, skinRegions] = await Promise.all([loadBodyModel(state.variant), loadSkinRegions()]);
+    state.variant = model.variant; // 読めなかった傾向は標準に戻る
     const positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
     const colors = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
     const geometry = new THREE.BufferGeometry();
@@ -369,12 +370,20 @@ function updateBody({ quick = false } = {}) {
     },
     { quick },
   );
+  body.morph = null; // 入力が変わったら、途中の切り替えアニメーションは終わりにして新しい形にする
   model.blend(shape.params, positions.array);
   if (state.muscle == null) showAutoMuscle(Math.round(shape.params.muscle * 100));
   const { minY, girths, height } = model.measure(positions.array);
   showGirths(girths);
   setBodyHeight(height);
   body.figure.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
+  refreshGeometry();
+  showStatus(shape.inRange ? '' : 'モデルで表せる範囲を超えているため、近い体形を表示しています');
+}
+
+// 頂点を書き換えた後の更新（法線・服の追従）
+function refreshGeometry() {
+  const { mesh, positions } = body;
   positions.needsUpdate = true;
   // 法線は隠した三角形も含めて計算する（服を脱いだときに隠れていた部分の法線が古くならないように）
   mesh.geometry.setIndex(body.fullIndex);
@@ -382,7 +391,47 @@ function updateBody({ quick = false } = {}) {
   mesh.geometry.setIndex(body.visibleIndex);
   mesh.geometry.computeBoundingSphere();
   for (const a of worn) a.update(positions.array);
-  showStatus(shape.inRange ? '' : 'モデルで表せる範囲を超えているため、近い体形を表示しています');
+}
+
+// --- 体格の傾向 ---
+// 選んだ傾向の形状データを読み込み（初めてならネットワークから）、今の体形から新しい体形へなめらかに変える
+const variantSelect = document.getElementById('variant');
+let variantRequest = 0;
+async function applyVariant() {
+  if (!body || body.model.variant === state.variant) return;
+  const request = ++variantRequest;
+  const from = { positions: body.positions.array.slice(), y: body.figure.position.y };
+  try {
+    showStatus('体格の傾向のデータを読み込み中…');
+    await body.model.loadShape(state.variant);
+  } catch (err) {
+    console.error(err);
+    showStatus('データを読み込めませんでした（オフラインでは、一度選んだことのある傾向だけ使えます）');
+    return;
+  }
+  if (request !== variantRequest) return;
+  body.mapShape = createShapeMapper(body.model);
+  updateBody();
+  if (reduceMotion.matches) return;
+  body.morph = {
+    from,
+    to: { positions: body.positions.array.slice(), y: body.figure.position.y },
+    start: performance.now(),
+    duration: 600,
+  };
+  stepMorph(performance.now());
+}
+
+function stepMorph(now) {
+  const m = body?.morph;
+  if (!m) return;
+  const t = Math.min((now - m.start) / m.duration, 1);
+  const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+  const out = body.positions.array;
+  for (let i = 0; i < out.length; i++) out[i] = m.from.positions[i] + (m.to.positions[i] - m.from.positions[i]) * e;
+  body.figure.position.y = m.from.y + (m.to.y - m.from.y) * e;
+  refreshGeometry();
+  if (t >= 1) body.morph = null;
 }
 
 // メッシュから測った周囲長を表示する
@@ -443,6 +492,8 @@ const state = {
   bottom: null,
   // 肌の色（SKIN_TONES の番号）
   skin: DEFAULT_SKIN,
+  // 体格の傾向（data の shapes のキー）
+  variant: 'standard',
 };
 
 function limits(field) {
@@ -479,6 +530,7 @@ function render({ syncNumbers = true, quick = false } = {}) {
   muscleFieldEl.classList.toggle('is-auto', state.muscle == null);
   if (syncNumbers) for (const f of girthFields) f.number.value = state[f.key] ?? '';
   for (const input of sexInputs) input.checked = input.value === state.sex;
+  variantSelect.value = state.variant;
   for (const input of skinPicker.querySelectorAll('input')) input.checked = Number(input.value) === state.skin;
 
   const h = state.height / 100;
@@ -500,7 +552,8 @@ function updateSummaries() {
   document.getElementById('sheet-summary-bmi').textContent = `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}`;
   document.getElementById('basic-summary').textContent = basic;
   const muscle = state.muscle == null ? `自動 ${autoMuscle}` : state.muscle;
-  document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle}`;
+  const variant = variantSelect.selectedOptions[0]?.textContent ?? '';
+  document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle} · ${variant}`;
   const label = (id) => catalog.find((a) => a.id === id)?.label;
   const outfit = SLOTS.map((slot) => label(state[slot])).filter(Boolean);
   document.getElementById('outfit-summary').textContent = outfit.length ? outfit.join(' · ') : 'なし';
@@ -529,6 +582,7 @@ function restore() {
   }
   if (SEXES.includes(saved.sex)) state.sex = saved.sex;
   if (Number.isInteger(saved.skin) && saved.skin >= 0 && saved.skin < SKIN_TONES.length) state.skin = saved.skin;
+  if ([...variantSelect.options].some((o) => o.value === saved.variant)) state.variant = saved.variant;
   // 服装は一覧を読み込んだ後に、存在する id か確かめる
   for (const slot of ['top', 'bottom']) if (typeof saved[slot] === 'string') state[slot] = saved[slot];
   for (const f of girthFields) {
@@ -595,6 +649,13 @@ muscleAuto.addEventListener('change', () => {
   save();
 });
 
+variantSelect.addEventListener('change', () => {
+  state.variant = variantSelect.value;
+  updateSummaries();
+  save();
+  applyVariant();
+});
+
 // 肌の色の選択肢
 const skinPicker = document.getElementById('skin-picker');
 SKIN_TONES.forEach((tone, i) => {
@@ -657,6 +718,7 @@ resize();
 renderer.setAnimationLoop((now) => {
   updateViewport();
   stepTween(now);
+  stepMorph(now);
   controls.update();
   renderer.render(scene, camera);
 });

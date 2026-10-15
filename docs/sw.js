@@ -3,11 +3,12 @@
 // - キャッシュ名にバージョンを入れ、新しい版をインストールし終えたら古いキャッシュを消す
 // - ページは常に1つのキャッシュ（＝1つの版）からだけ読むので、新旧ファイルは混ざらない
 // - 新しい版は待機状態で止め、ページからの指示（SKIP_WAITING）で切り替えてから再読み込みする
+// - 標準以外の体格の傾向の形状データは最初はキャッシュせず、選ばれて取得したときにキャッシュに入れる
 //
 // VERSION と FILES は `node tools/update-sw.mjs` で更新する（手で書き換えない）。
 
 // <precache>
-const VERSION = '924507dacd';
+const VERSION = '9a3b052d60';
 const FILES = [
   './',
   'app.js',
@@ -16,6 +17,7 @@ const FILES = [
   'data/README.md',
   'data/anny-body.bin',
   'data/anny-body.json',
+  'data/anny-shape-standard.bin',
   'data/assets/README.md',
   'data/assets/index.json',
   'data/assets/short_jeans.bin',
@@ -83,7 +85,11 @@ self.addEventListener('fetch', (event) => {
       // ページの表示は index.html（./ や ?source=pwa などでも同じものを返す）
       const key = request.mode === 'navigate' ? new URL('./', self.registration.scope).href : request;
       const cached = await cache.match(key, { ignoreSearch: request.mode === 'navigate' });
-      return cached ?? fetch(request);
+      if (cached) return cached;
+      const response = await fetch(request);
+      // 必要になったときに読むデータ（標準以外の体格の傾向など）は、取得したら同じ版のキャッシュに入れる
+      if (response.ok && new URL(request.url).pathname.includes('/data/')) cache.put(request, response.clone());
+      return response;
     })(),
   );
 });

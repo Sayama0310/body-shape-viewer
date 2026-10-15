@@ -2,7 +2,7 @@
 // パラメータに応じて角の頂点と局所変形を重み付き合成する。
 
 const DATA_URL = new URL('./data/anny-body.json', import.meta.url);
-const FORMAT_VERSION = 4;
+const FORMAT_VERSION = 5;
 
 // 体重の換算に使う密度（Anny の anthropometry.py と同じ値）
 export const BODY_DENSITY = 980; // kg/m³
@@ -10,14 +10,27 @@ export const BODY_DENSITY = 980; // kg/m³
 // 周囲長の名前（data の measurements / localChanges の name と同じ）
 export const GIRTHS = ['chest', 'underbust', 'waist', 'hip', 'upperarm', 'thigh', 'calf', 'ankle'];
 
-export async function loadBodyModel() {
+// variant: 体格の傾向（data の shapes のキー）。共通データと、その傾向の形状だけを読み込む
+export async function loadBodyModel(variant = 'standard') {
   const meta = await fetchJson(DATA_URL);
   if (meta.formatVersion !== FORMAT_VERSION) {
     throw new Error(`未対応のデータ形式です（formatVersion ${meta.formatVersion}）`);
   }
-  const res = await fetch(new URL('./anny-body.bin', DATA_URL));
+  if (!(variant in meta.shapes)) variant = 'standard';
+  const [shared, shape] = await Promise.all([fetchBuffer(new URL('./anny-body.bin', DATA_URL)), fetchShape(meta, variant)]);
+  const model = new BodyModel(meta, shared);
+  model.setShape(variant, shape);
+  return model;
+}
+
+async function fetchBuffer(url) {
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`体形データを読み込めませんでした（${res.status}）`);
-  return new BodyModel(meta, await res.arrayBuffer());
+  return res.arrayBuffer();
+}
+
+export function fetchShape(meta, variant) {
+  return fetchBuffer(new URL(meta.shapes[variant].file, DATA_URL));
 }
 
 async function fetchJson(url) {
@@ -108,14 +121,10 @@ function addSparse(out, index, deltas, start, count, value, scale) {
 export class BodyModel {
   constructor(meta, buffer) {
     this.vertexCount = meta.vertexCount;
+    this.meta = meta;
     this.dims = meta.dims;
     this.index = view(buffer, meta.layout.faces, Uint16Array);
-    this.mean = view(buffer, meta.layout.mean, Float32Array);
-    this.deltas = view(buffer, meta.layout.deltas, Int16Array);
-    this.deltaScale = meta.deltaScale;
     this.ageAnchors = meta.age.anchors;
-    this.ageDeltas = view(buffer, meta.layout.ageDeltas, Int8Array);
-    this.ageDeltaScale = meta.age.deltaScale;
     this.yearsToAnny = meta.age.yearsToAnny;
     this.faceFatIndex = view(buffer, meta.layout.faceFatIndex, Uint16Array);
     this.faceFatDeltas = view(buffer, meta.layout.faceFatDeltas, Int16Array);
@@ -126,6 +135,21 @@ export class BodyModel {
     this.localChanges = meta.localChanges; // [{name, start, count}]
     this.girthSections = meta.measurements; // {name: {a, b, t}}
     this.cornerSize = this.vertexCount * 3;
+  }
+
+  // 体格の傾向の形状（角の頂点）を差し替える。buffer は fetchShape で読み込んだもの
+  setShape(variant, buffer) {
+    const shape = this.meta.shapes[variant];
+    this.variant = variant;
+    this.mean = view(buffer, shape.layout.mean, Float32Array);
+    this.deltas = view(buffer, shape.layout.deltas, Int16Array);
+    this.deltaScale = shape.deltaScale;
+    this.ageDeltas = view(buffer, shape.layout.ageDeltas, Int8Array);
+    this.ageDeltaScale = shape.ageDeltaScale;
+  }
+
+  async loadShape(variant) {
+    this.setShape(variant, await fetchShape(this.meta, variant));
   }
 
   // 0 でない重みを持つ角の [{corner, weight}]

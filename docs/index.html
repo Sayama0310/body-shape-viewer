@@ -80,7 +80,7 @@
         </section>
         <section class="group" data-group="body">
           <button type="button" class="group-head" aria-expanded="false">
-            <span class="group-title">年齢・筋肉量</span>
+            <span class="group-title">年齢・体格</span>
             <span class="group-summary" id="body-summary"></span>
           </button>
           <div class="group-body"><div class="group-inner">
@@ -102,6 +102,15 @@
               <input type="range" id="muscle" min="0" max="100" step="1" value="50" aria-label="筋肉量">
               <p class="hint">0〜100（50 が平均）。自動のときは体重と体形から決めます。</p>
             </div>
+            <label class="select-row">体格の傾向
+              <select id="variant">
+                <option value="standard">標準</option>
+                <option value="african">アフリカ系</option>
+                <option value="asian">アジア系</option>
+                <option value="caucasian">ヨーロッパ系</option>
+              </select>
+            </label>
+            <p class="hint">体形モデル（Anny / MakeHuman）に含まれる、集団ごとの平均的な体格の傾向です。統計的な傾向のモデルで、個人の特徴や出自を表すものではありません。標準はこれらを等分に混ぜたものです。</p>
           </div></div>
         </section>
         <section class="group" data-group="look">
