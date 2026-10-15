@@ -99,6 +99,12 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* 周囲長の欄を開いても 3D 表示の場所を残す */
+  max-height: 55vh;
+  max-height: 55dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
 }
 
 .field {
@@ -215,4 +221,78 @@ input[type="range"] {
   height: 32px;
   margin: 0;
   accent-color: var(--accent);
+}
+
+.girths {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 10px;
+}
+
+.girths summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--sub);
+  cursor: pointer;
+  list-style: none;
+}
+
+.girths summary::-webkit-details-marker {
+  display: none;
+}
+
+.girths summary::before {
+  content: "▸";
+  margin-right: -2px;
+  transition: transform 0.15s;
+}
+
+.girths[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.girths summary > span:first-of-type {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.girth-summary {
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.girths .hint {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.5;
+}
+
+.girth-row {
+  display: grid;
+  grid-template-columns: 4.5em 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--sub);
+}
+
+.girth-row .measured {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.girth-row .num input {
+  font-size: 17px;
+  width: 5em;
+}
+
+.girth-row .num input::placeholder {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--sub);
 }

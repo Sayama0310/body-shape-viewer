@@ -53,6 +53,28 @@
         </div>
         <input type="range" id="weight" min="30" max="150" step="1" value="65" aria-label="体重">
       </div>
+      <details class="girths" id="girths">
+        <summary>
+          <span>周囲長（任意）</span>
+          <span id="girth-summary" class="girth-summary"></span>
+        </summary>
+        <p class="hint">入力した値に体形を近づけます（空欄はモデルの値のまま）。胸囲はバストトップ、ウエストは胴の最も細いところ、ヒップはお尻の最も太いところの周囲です。</p>
+        <div class="girth-row">
+          <label for="chest-num">胸囲</label>
+          <span class="measured">モデル <output id="chest-measured">–</output> cm</span>
+          <span class="num"><input type="number" id="chest-num" inputmode="decimal" min="40" max="200" step="0.1" placeholder="未入力"> cm</span>
+        </div>
+        <div class="girth-row">
+          <label for="waist-num">ウエスト</label>
+          <span class="measured">モデル <output id="waist-measured">–</output> cm</span>
+          <span class="num"><input type="number" id="waist-num" inputmode="decimal" min="40" max="200" step="0.1" placeholder="未入力"> cm</span>
+        </div>
+        <div class="girth-row">
+          <label for="hip-num">ヒップ</label>
+          <span class="measured">モデル <output id="hip-measured">–</output> cm</span>
+          <span class="num"><input type="number" id="hip-num" inputmode="decimal" min="40" max="200" step="0.1" placeholder="未入力"> cm</span>
+        </div>
+      </details>
     </form>
   </main>
   <script type="module" src="app.js"></script>
