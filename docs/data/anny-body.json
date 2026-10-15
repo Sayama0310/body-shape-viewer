@@ -1,0 +1,90 @@
+{
+  "formatVersion": 1,
+  "source": "anny 0.6.1 (topology=anny, rig=anny)",
+  "vertexCount": 13718,
+  "faceCount": 27420,
+  "dims": [
+    {
+      "name": "gender",
+      "anchors": [
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "muscle",
+      "anchors": [
+        0.0,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "name": "weight",
+      "anchors": [
+        0.0,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "name": "height",
+      "anchors": [
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "fixed": {
+    "age": 0.6666666666666666,
+    "proportions": 0.5
+  },
+  "poseDeg": {
+    "upperarm01": [
+      0.0,
+      32.0,
+      0.0
+    ],
+    "lowerarm01": [
+      40.0,
+      -8.0,
+      0.0
+    ],
+    "upperleg01": [
+      0.0,
+      4.0,
+      0.0
+    ]
+  },
+  "deltaScale": 1.2142751212525267e-05,
+  "layout": {
+    "faces": {
+      "offset": 0,
+      "byteLength": 164520,
+      "type": "uint16",
+      "shape": [
+        27420,
+        3
+      ]
+    },
+    "mean": {
+      "offset": 164520,
+      "byteLength": 164616,
+      "type": "float32",
+      "shape": [
+        13718,
+        3
+      ]
+    },
+    "deltas": {
+      "offset": 329136,
+      "byteLength": 2963088,
+      "type": "int16",
+      "shape": [
+        36,
+        13718,
+        3
+      ]
+    }
+  }
+}

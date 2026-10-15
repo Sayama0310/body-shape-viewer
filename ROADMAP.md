@@ -22,7 +22,7 @@
 - 最後の入力値を localStorage に保存し、次回起動時に復元する（読み書きは try/catch で囲む）
 - BMI を表示する
 
-## 3. [ ] Anny データの書き出し
+## 3. [x] Anny データの書き出し
 - Anny は `pip install anny`（PyTorch 製）。`smplx` / `smpl` トポロジや `anny[smpl]` などの非商用アセットは使わない（既定の `anny` トポロジを使う）
 - `tools/export/` に Anny から基本メッシュとブレンドシェイプを書き出す Python スクリプトを作る
 - Anny の LICENSE / NOTICE を確認し、必要な表記を `docs/` に置く
