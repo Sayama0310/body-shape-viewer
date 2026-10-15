@@ -40,6 +40,11 @@
       </div>
       <p id="viewer-status" class="viewer-status" role="status" aria-hidden="true"></p>
       <div id="person-labels" class="person-labels" aria-hidden="true"></div>
+      <!-- 入力のシートは、ふだんは出さない（身長・体重などを人に見られないように）。このボタンで出す -->
+      <button type="button" id="sheet-open" class="sheet-open" aria-controls="sheet">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg>
+        入力
+      </button>
     </div>
     <!-- 入力のボトムシート。つまみ部分を上下にドラッグして引き出し量を変える -->
     <section id="sheet" class="sheet" aria-label="入力">
@@ -51,6 +56,9 @@
           <button type="button" id="privacy-toggle" class="privacy-toggle" aria-pressed="false" aria-label="身長・体重を表示">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path class="eye" d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z"/><circle class="eye" cx="12" cy="12" r="3"/><path class="slash" d="M4 3l17 18"/></svg>
             <span class="privacy-text">数値を表示</span>
+          </button>
+          <button type="button" id="sheet-close" class="sheet-close" aria-label="入力を閉じる">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
           </button>
         </div>
         <button type="button" id="sheet-toggle" class="sheet-summary" aria-controls="sheet-body" aria-expanded="false">
@@ -117,7 +125,8 @@
   <dialog id="help" class="help">
     <h2>使い方</h2>
     <ul>
-      <li>身長・体重などの数値はふだんは隠れています。シート右上の「数値を表示」を押すと表示され、シートをたたむか、アプリを切り替えるとまた隠れます。</li>
+      <li>入力のシートはふだんは隠れています。下の「入力」を押すと出て、右上の × で閉じます。</li>
+      <li>シートを出しても、身長・体重などの数値は「•••」で隠れています。「数値を表示」を押すと表示され、シートを閉じる・たたむ、またはアプリを切り替えると、また隠れます。</li>
       <li>身長・体重はスライダーか数値で入力します。性別で体形の傾向が変わります（年齢は30歳、筋肉量は平均として計算します）。</li>
       <li>シート上部の「＋ 2人目を追加」で別の人をもう1人並べられます。タブで入力する人を切り替え、名前（任意）は頭の上に表示されます。</li>
       <li>3D表示は1本指で回転、2本指のピンチで指の間に向かって拡大・縮小、2本指のドラッグで平行移動します。ダブルタップした部位に寄り、もう一度ダブルタップすると全身に戻ります。右上のボタンで正面・横・後ろ・全身に切り替えられます。</li>
