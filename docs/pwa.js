@@ -5,7 +5,8 @@ const banner = document.getElementById('update-banner');
 const button = document.getElementById('update-button');
 
 function offerUpdate(worker) {
-  banner.hidden = false;
+  banner.classList.add('is-shown');
+  banner.setAttribute('aria-hidden', 'false');
   button.onclick = () => {
     button.disabled = true;
     worker.postMessage('SKIP_WAITING');

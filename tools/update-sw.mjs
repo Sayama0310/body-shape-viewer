@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 const DOCS = fileURLToPath(new URL('../docs/', import.meta.url));
 const SW = join(DOCS, 'sw.js');
 const EXCLUDE = new Set(['sw.js']);
+// 最初はキャッシュしないファイル（選ばれたときに sw.js が取得してキャッシュする）
+const ON_DEMAND = /^data\/anny-shape-(?!standard\.bin$).*\.bin$/;
 
 function walk(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -23,11 +25,12 @@ function walk(dir) {
 
 const files = walk(DOCS)
   .map((p) => relative(DOCS, p).split(sep).join('/'))
-  .filter((p) => !EXCLUDE.has(p))
+  .filter((p) => !EXCLUDE.has(p) && !ON_DEMAND.test(p))
   .sort();
 
 const hash = createHash('sha256');
-for (const f of files) {
+const hashed = walk(DOCS).map((p) => relative(DOCS, p).split(sep).join('/')).filter((p) => !EXCLUDE.has(p)).sort();
+for (const f of hashed) {
   hash.update(f + '\0');
   hash.update(readFileSync(join(DOCS, f)));
 }

@@ -25,7 +25,7 @@ import torch
 import anny
 from anny.anthropometry import BASE_MESH_WAIST_VERTICES
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 5
 
 # 書き出す次元とアンカー値（Anny のフェノタイプ値, 0〜1）。順序がバイナリ内の角の並び順になる
 DIMS = {
@@ -39,6 +39,14 @@ AGE_ANCHORS = [2 / 3, 1.0]
 # 固定するフェノタイプ
 FIXED = {
     "proportions": 0.5,
+}
+# 体格の傾向（Anny の african / asian / caucasian）。標準は3つとも既定値（等分の混合）。
+# 形状（角の頂点）だけを傾向ごとのファイルに分け、局所変形・顔・計測断面は標準の上で取って共有する
+VARIANTS = {
+    "standard": {"label": "標準", "race": {}},
+    "african": {"label": "アフリカ系", "race": {"african": 1.0, "asian": 0.0, "caucasian": 0.0}},
+    "asian": {"label": "アジア系", "race": {"african": 0.0, "asian": 1.0, "caucasian": 0.0}},
+    "caucasian": {"label": "ヨーロッパ系", "race": {"african": 0.0, "asian": 0.0, "caucasian": 1.0}},
 }
 # 局所変形・計測頂点を決める基準の年齢（歳）
 REFERENCE_AGE_YEARS = 30
@@ -247,7 +255,8 @@ def main():
     torch.set_grad_enabled(False)
     # 既定の anny トポロジ・リグに、使う局所変形だけを加える
     face_labels = sorted({label for parts in FACE_FAT.values() for label in parts})
-    model = anny.Anny(local_changes=list(LOCAL_CHANGES.values()) + face_labels).to(dtype=torch.float64)
+    # phenotypes="all": 体格の傾向（african / asian / caucasian）も指定できるようにする（他の追加分は既定値 0.5 のまま）
+    model = anny.Anny(local_changes=list(LOCAL_CHANGES.values()) + face_labels, phenotypes="all").to(dtype=torch.float64)
     pose = build_pose(model)
     ages = age_mapping()
     reference_phenotypes = {
@@ -274,28 +283,55 @@ def main():
         return to_three(np.einsum("vij,vj->vi", rot, rest_delta))
 
     combos = list(itertools.product(*DIMS.values()))
-    corners_by_age = [
-        np.stack([vertices_for({**FIXED, "age": age, **dict(zip(DIMS, c))}) for c in combos]) for age in AGE_ANCHORS
-    ]
-    corners = corners_by_age[0]
+
+    def write_blocks(path, blobs):
+        layout, offset, chunks = {}, 0, []
+        for name, arr in blobs:
+            data = arr.tobytes()
+            layout[name] = {"offset": offset, "byteLength": len(data), "type": arr.dtype.name, "shape": list(arr.shape)}
+            chunks.append(data)
+            offset += len(data)
+            offset += (-offset) % 4  # 次のブロックを 4 バイト境界に揃える
+            chunks.append(b"\0" * ((-len(data)) % 4))
+        path.write_bytes(b"".join(chunks))
+        return layout, offset
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    shapes = {}
+    for variant, spec in VARIANTS.items():
+        corners_by_age = [
+            np.stack([vertices_for({**FIXED, **spec["race"], "age": age, **dict(zip(DIMS, c))}) for c in combos])
+            for age in AGE_ANCHORS
+        ]
+        corners = corners_by_age[0]
+        mean = corners.mean(axis=0)
+        deltas = corners - mean
+        scale = float(np.abs(deltas).max()) / 32767
+        quantized = np.round(deltas / scale).astype("<i2")
+        quant_error = float(np.abs(quantized * scale - deltas).max())
+        # 年齢: "old" の角と "young" の角の差。差が小さい（最大 7cm 程度）ので 8bit にする
+        age_deltas = corners_by_age[1] - corners_by_age[0]
+        age_scale = float(np.abs(age_deltas).max()) / 127
+        age_quantized = np.round(age_deltas / age_scale).astype("i1")
+        age_quant_error = float(np.abs(age_quantized * age_scale - age_deltas).max())
+        file = f"anny-shape-{variant}.bin"
+        layout, size = write_blocks(
+            args.out / file, [("mean", mean.astype("<f4")), ("deltas", quantized), ("ageDeltas", age_quantized)]
+        )
+        shapes[variant] = {
+            "label": spec["label"], "race": spec["race"], "file": file, "layout": layout,
+            "deltaScale": scale, "ageDeltaScale": age_scale,
+        }
+        print(f"{variant}: {size / 1e6:.2f} MB, quantization error {quant_error * 1000:.3f} mm, age {age_quant_error * 1000:.3f} mm")
+        if variant == "standard":
+            standard_corners_by_age = corners_by_age
+    corners_by_age = standard_corners_by_age
 
     # 三角形の向きは座標変換（右手系のまま）で変わらない
     faces = model.faces.numpy()
-    vertex_count = corners.shape[1]
+    vertex_count = corners_by_age[0].shape[1]
     if vertex_count > 65535:
         raise ValueError("頂点数が Uint16 の範囲を超えています")
-
-    mean = corners.mean(axis=0)
-    deltas = corners - mean
-    scale = float(np.abs(deltas).max()) / 32767
-    quantized = np.round(deltas / scale).astype("<i2")
-    quant_error = float(np.abs(quantized * scale - deltas).max())
-
-    # 年齢: "old" の角と "young" の角の差。差が小さい（最大 7cm 程度）ので 8bit にする
-    age_deltas = corners_by_age[1] - corners_by_age[0]
-    age_scale = float(np.abs(age_deltas).max()) / 127
-    age_quantized = np.round(age_deltas / age_scale).astype("i1")
-    age_quant_error = float(np.abs(age_quantized * age_scale - age_deltas).max())
 
     # 局所変形の差分（基準体形で +1 / -1 にしたときの変化）。並びは [変形][符号 +, -][頂点][xyz]
     reference = vertices_for(reference_phenotypes)
@@ -326,26 +362,13 @@ def main():
         model, lambda ph: vertices_for({**ph, "age": reference_phenotypes["age"]}), local_full
     )
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    blobs = [
+    layout, offset = write_blocks(args.out / "anny-body.bin", [
         ("faces", faces.astype("<u2")),
-        ("mean", mean.astype("<f4")),
-        ("deltas", quantized),
-        ("ageDeltas", age_quantized),
         ("localIndex", local_index.astype("<u2")),
         ("localDeltas", local_quantized),
         ("faceFatIndex", face_index.astype("<u2")),
         ("faceFatDeltas", face_quantized),
-    ]
-    layout, offset, chunks = {}, 0, []
-    for name, arr in blobs:
-        data = arr.tobytes()
-        layout[name] = {"offset": offset, "byteLength": len(data), "type": arr.dtype.name, "shape": list(arr.shape)}
-        chunks.append(data)
-        offset += len(data)
-        offset += (-offset) % 4  # 次のブロックを 4 バイト境界に揃える
-        chunks.append(b"\0" * ((-len(data)) % 4))
-    (args.out / "anny-body.bin").write_bytes(b"".join(chunks))
+    ])
 
     meta = {
         "formatVersion": FORMAT_VERSION,
@@ -353,10 +376,10 @@ def main():
         "vertexCount": int(vertex_count),
         "faceCount": int(faces.shape[0]),
         "dims": [{"name": k, "anchors": v} for k, v in DIMS.items()],
-        "age": {"anchors": AGE_ANCHORS, "deltaScale": age_scale, "yearsToAnny": ages},
+        "age": {"anchors": AGE_ANCHORS, "yearsToAnny": ages},
         "fixed": FIXED,
         "poseDeg": POSE_DEG,
-        "deltaScale": scale,
+        "shapes": shapes,
         "localChanges": [
             {"name": name, "annyLabel": label, "range": [-1, 1], **local_ranges[name]}
             for name, label in LOCAL_CHANGES.items()
@@ -371,7 +394,7 @@ def main():
     (args.out / "anny-body.json").write_text(json.dumps(meta, indent=2) + "\n")
 
     print(f"corners: {len(combos)}, vertices: {vertex_count}, faces: {faces.shape[0]}")
-    print(f"bin size: {offset / 1e6:.2f} MB, quantization error: {quant_error * 1000:.3f} mm, age {age_quant_error * 1000:.3f} mm")
+    print(f"shared bin size: {offset / 1e6:.2f} MB")
     print(f"face fat: {len(face_index)} vertices")
 
     for name, sec in measurements.items():

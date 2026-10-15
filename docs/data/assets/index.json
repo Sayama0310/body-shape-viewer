@@ -1,0 +1,190 @@
+{
+  "formatVersion": 1,
+  "bodyVertexCount": 13718,
+  "assets": [
+    {
+      "id": "tank_top",
+      "kind": "clothes",
+      "slot": "top",
+      "label": "タンクトップ",
+      "file": "tank_top.bin",
+      "texture": "tank_top.png",
+      "vertexCount": 1113,
+      "indexCount": 5016,
+      "hiddenFaceCount": 1925,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 6678
+        },
+        "bary": {
+          "offset": 6680,
+          "byteLength": 8904
+        },
+        "offset": {
+          "offset": 15584,
+          "byteLength": 13356
+        },
+        "uv": {
+          "offset": 28940,
+          "byteLength": 8904
+        },
+        "index": {
+          "offset": 37844,
+          "byteLength": 10032
+        },
+        "hiddenFaces": {
+          "offset": 47876,
+          "byteLength": 3850
+        }
+      },
+      "source": {
+        "name": "Tank_Top_01",
+        "author": "Mindfront (Sweden)",
+        "license": "CC BY 4.0",
+        "homepage": "",
+        "copyright": "(c) MakeHuman.org 2001-2015"
+      },
+      "bindDistanceMax": 0.02806058051511759,
+      "bytes": 84378
+    },
+    {
+      "id": "top",
+      "kind": "clothes",
+      "slot": "top",
+      "label": "トップス",
+      "file": "top.bin",
+      "texture": "top.png",
+      "vertexCount": 1278,
+      "indexCount": 6468,
+      "hiddenFaceCount": 591,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 7668
+        },
+        "bary": {
+          "offset": 7668,
+          "byteLength": 10224
+        },
+        "offset": {
+          "offset": 17892,
+          "byteLength": 15336
+        },
+        "uv": {
+          "offset": 33228,
+          "byteLength": 10224
+        },
+        "index": {
+          "offset": 43452,
+          "byteLength": 12936
+        },
+        "hiddenFaces": {
+          "offset": 56388,
+          "byteLength": 1182
+        }
+      },
+      "source": {
+        "name": "female_top_01",
+        "author": "wolgade",
+        "license": "CC0",
+        "homepage": "http://www.makehuman.org/",
+        "copyright": "(c) MakeHuman.org 2001-2015"
+      },
+      "bindDistanceMax": 0.032448780471426644,
+      "bytes": 257310
+    },
+    {
+      "id": "short_jeans",
+      "kind": "clothes",
+      "slot": "bottom",
+      "label": "ショートジーンズ",
+      "file": "short_jeans.bin",
+      "texture": "short_jeans.png",
+      "vertexCount": 1444,
+      "indexCount": 6336,
+      "hiddenFaceCount": 944,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 8664
+        },
+        "bary": {
+          "offset": 8664,
+          "byteLength": 11552
+        },
+        "offset": {
+          "offset": 20216,
+          "byteLength": 17328
+        },
+        "uv": {
+          "offset": 37544,
+          "byteLength": 11552
+        },
+        "index": {
+          "offset": 49096,
+          "byteLength": 12672
+        },
+        "hiddenFaces": {
+          "offset": 61768,
+          "byteLength": 1888
+        }
+      },
+      "source": {
+        "name": "ShortJeans",
+        "author": "punkduck",
+        "license": "CC BY 3.0 (see also https://creativecommons.org/licenses/by/3.0/ )",
+        "homepage": "http://www.makehuman.org/",
+        "copyright": "(c) MakeHuman.org 2001-2015"
+      },
+      "bindDistanceMax": 0.022835285394321076,
+      "bytes": 392836
+    },
+    {
+      "id": "shorts",
+      "kind": "clothes",
+      "slot": "bottom",
+      "label": "ショーツ",
+      "file": "shorts.bin",
+      "texture": "shorts.png",
+      "vertexCount": 996,
+      "indexCount": 4554,
+      "hiddenFaceCount": 97,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 5976
+        },
+        "bary": {
+          "offset": 5976,
+          "byteLength": 7968
+        },
+        "offset": {
+          "offset": 13944,
+          "byteLength": 11952
+        },
+        "uv": {
+          "offset": 25896,
+          "byteLength": 7968
+        },
+        "index": {
+          "offset": 33864,
+          "byteLength": 9108
+        },
+        "hiddenFaces": {
+          "offset": 42972,
+          "byteLength": 194
+        }
+      },
+      "source": {
+        "name": "female_panties_01",
+        "author": "wolgade",
+        "license": "CC0",
+        "homepage": "",
+        "copyright": "(c) MakeHuman.org 2001-2015"
+      },
+      "bindDistanceMax": 0.008758128362742285,
+      "bytes": 178563
+    }
+  ]
+}
