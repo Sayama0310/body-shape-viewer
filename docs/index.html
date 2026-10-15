@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Body Shape Viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main class="app">
+    <div id="viewer" class="viewer"></div>
+    <form class="controls" id="controls" onsubmit="return false">
+      <label class="field">
+        <span class="field-head">身長 <output id="height-out">170</output> cm</span>
+        <input type="range" id="height" min="130" max="200" step="1" value="170">
+      </label>
+      <label class="field">
+        <span class="field-head">体重 <output id="weight-out">65</output> kg</span>
+        <input type="range" id="weight" min="30" max="150" step="1" value="65">
+      </label>
+    </form>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
