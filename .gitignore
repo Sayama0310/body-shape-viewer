@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+Thumbs.db
+# Anny の元データやモデルキャッシュはコミットしない（書き出し結果のみ docs/data に置く）
+tools/export/cache/
