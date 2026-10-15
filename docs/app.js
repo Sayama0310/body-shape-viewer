@@ -199,7 +199,63 @@ helpDialog.addEventListener('cancel', (e) => {
 });
 
 // --- 体形 ---
-const material = new THREE.MeshStandardMaterial({ color: 0xd8a585, roughness: 0.62, metalness: 0 });
+// 肌の色は頂点色で塗る（唇・爪などの部位ごとに少し色を変える）
+const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.62, metalness: 0 });
+
+// 肌の色のプリセット（明るい → 暗い）。4 番目がこれまでの色
+const SKIN_TONES = [
+  { hex: '#f7e1d3', label: 'とても明るい' },
+  { hex: '#efcbb0', label: '明るい' },
+  { hex: '#e2b28f', label: 'やや明るい' },
+  { hex: '#d8a585', label: '中間' },
+  { hex: '#c18760', label: 'やや濃い' },
+  { hex: '#a0673f', label: '濃い' },
+  { hex: '#7a4a2e', label: 'とても濃い' },
+  { hex: '#553222', label: '最も濃い' },
+];
+const DEFAULT_SKIN = 3;
+
+async function loadSkinRegions() {
+  try {
+    const [meta, bin] = await Promise.all([
+      fetch(new URL('./data/skin-regions.json', import.meta.url)).then((r) => r.json()),
+      fetch(new URL('./data/skin-regions.bin', import.meta.url)).then((r) => r.arrayBuffer()),
+    ]);
+    return { channels: meta.channels, weights: new Uint8Array(bin) };
+  } catch (err) {
+    console.error(err);
+    return null; // 塗り分けなしで続ける
+  }
+}
+
+// 部位ごとの色: 肌の色に掛ける係数（線形の色空間）か、混ぜる色
+const REGION_TINTS = {
+  lips: (c) => c.clone().multiply(new THREE.Color(0.82, 0.52, 0.52)),
+  nails: (c) => c.clone().lerp(new THREE.Color(1, 0.86, 0.84), 0.45),
+  areolae: (c) => c.clone().multiply(new THREE.Color(0.72, 0.56, 0.52)),
+  eyelids: (c) => c.clone().multiplyScalar(0.88),
+};
+
+function applySkin() {
+  if (!body) return;
+  const base = new THREE.Color(SKIN_TONES[state.skin].hex);
+  const colors = body.colors.array;
+  const regions = body.skinRegions;
+  const tints = regions ? regions.channels.map((name) => REGION_TINTS[name]?.(base) ?? base) : [];
+  const n = body.model.vertexCount;
+  const c = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    c.copy(base);
+    for (let k = 0; k < tints.length; k++) {
+      const w = regions.weights[i * tints.length + k] / 255;
+      if (w > 0) c.lerp(tints[k], w);
+    }
+    colors[i * 3] = c.r;
+    colors[i * 3 + 1] = c.g;
+    colors[i * 3 + 2] = c.b;
+  }
+  body.colors.needsUpdate = true;
+}
 let body = null; // { model, mapShape, mesh, positions }
 
 function showStatus(text) {
@@ -211,10 +267,12 @@ function showStatus(text) {
 async function initBody() {
   showStatus('体形データを読み込み中…');
   try {
-    const model = await loadBodyModel();
+    const [model, skinRegions] = await Promise.all([loadBodyModel(), loadSkinRegions()]);
     const positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
+    const colors = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', positions);
+    geometry.setAttribute('color', colors);
     geometry.setIndex(new THREE.BufferAttribute(model.index, 1));
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
@@ -223,7 +281,8 @@ async function initBody() {
     figure.add(mesh);
     scene.add(figure);
     const fullIndex = geometry.index;
-    body = { model, mapShape: createShapeMapper(model), mesh, positions, figure, fullIndex, visibleIndex: fullIndex };
+    body = { model, mapShape: createShapeMapper(model), mesh, positions, colors, skinRegions, figure, fullIndex, visibleIndex: fullIndex };
+    applySkin();
     updateBody();
   } catch (err) {
     console.error(err);
@@ -382,6 +441,8 @@ const state = {
   // 服装（アセットの id、なしなら null）
   top: null,
   bottom: null,
+  // 肌の色（SKIN_TONES の番号）
+  skin: DEFAULT_SKIN,
 };
 
 function limits(field) {
@@ -418,6 +479,7 @@ function render({ syncNumbers = true, quick = false } = {}) {
   muscleFieldEl.classList.toggle('is-auto', state.muscle == null);
   if (syncNumbers) for (const f of girthFields) f.number.value = state[f.key] ?? '';
   for (const input of sexInputs) input.checked = input.value === state.sex;
+  for (const input of skinPicker.querySelectorAll('input')) input.checked = Number(input.value) === state.skin;
 
   const h = state.height / 100;
   const bmi = state.weight / (h * h);
@@ -442,6 +504,7 @@ function updateSummaries() {
   const label = (id) => catalog.find((a) => a.id === id)?.label;
   const outfit = SLOTS.map((slot) => label(state[slot])).filter(Boolean);
   document.getElementById('outfit-summary').textContent = outfit.length ? outfit.join(' · ') : 'なし';
+  document.getElementById('look-summary').textContent = `肌 ${SKIN_TONES[state.skin].label}`;
 }
 
 function save() {
@@ -465,6 +528,7 @@ function restore() {
     if (saved[f.key] != null && isValid(f, v)) state[f.key] = round1(v);
   }
   if (SEXES.includes(saved.sex)) state.sex = saved.sex;
+  if (Number.isInteger(saved.skin) && saved.skin >= 0 && saved.skin < SKIN_TONES.length) state.skin = saved.skin;
   // 服装は一覧を読み込んだ後に、存在する id か確かめる
   for (const slot of ['top', 'bottom']) if (typeof saved[slot] === 'string') state[slot] = saved[slot];
   for (const f of girthFields) {
@@ -530,6 +594,24 @@ muscleAuto.addEventListener('change', () => {
   render();
   save();
 });
+
+// 肌の色の選択肢
+const skinPicker = document.getElementById('skin-picker');
+SKIN_TONES.forEach((tone, i) => {
+  const label = document.createElement('label');
+  label.className = 'swatch';
+  label.title = tone.label;
+  label.innerHTML = `<input type="radio" name="skin" value="${i}" aria-label="${tone.label}"><span style="background:${tone.hex}"></span>`;
+  skinPicker.append(label);
+});
+for (const input of skinPicker.querySelectorAll('input')) {
+  input.addEventListener('change', () => {
+    state.skin = Number(input.value);
+    applySkin();
+    updateSummaries();
+    save();
+  });
+}
 
 for (const input of sexInputs) {
   input.addEventListener('change', () => {
