@@ -38,9 +38,7 @@ COVER_DISTANCE = 0.6
 # 書き出すアセット。license は元データのメタデータの値（書き出し時に一致を確認する）
 ASSETS = [
     {"id": "tank_top", "kind": "clothes", "slot": "top", "label": "タンクトップ", "source": "Tank_Top_01"},
-    {"id": "top", "kind": "clothes", "slot": "top", "label": "トップス", "source": "female_top_01"},
     {"id": "short_jeans", "kind": "clothes", "slot": "bottom", "label": "ショートジーンズ", "source": "ShortJeans"},
-    {"id": "shorts", "kind": "clothes", "slot": "bottom", "label": "ショーツ", "source": "female_panties_01"},
 ]
 # 自由に使えるライセンス（帰属表示は docs/licenses/ に置く）
 ALLOWED_LICENSES = ("CC0", "CC BY")
