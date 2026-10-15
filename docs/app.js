@@ -474,6 +474,7 @@ function showAutoMuscle(value) {
   autoMuscle = value;
   updateSummaries();
   muscleField.range.value = value;
+  paintRange(muscleField.range);
   if (document.activeElement !== muscleField.number) muscleField.number.value = value;
 }
 
@@ -524,6 +525,7 @@ function render({ syncNumbers = true, quick = false } = {}) {
   for (const f of fields) {
     const value = state[f.key] ?? autoMuscle; // null になるのは筋肉量（自動）だけ
     f.range.value = value;
+    paintRange(f.range);
     if (syncNumbers) f.number.value = value;
   }
   muscleAuto.checked = state.muscle == null;
@@ -591,14 +593,43 @@ function restore() {
   }
 }
 
+// スライダーの塗り（つまみより左）の割合を CSS 変数に入れる
+function paintRange(range) {
+  const min = Number(range.min);
+  const max = Number(range.max);
+  range.style.setProperty('--fill', `${((Number(range.value) - min) / (max - min)) * 100}%`);
+}
+
+// 指を離す瞬間の小さなずれを取り消す: 離す直前 RELEASE_WINDOW ms の間に動いた量が
+// 2目盛り以下なら、その前に止めていた値を確定値にする
+const RELEASE_WINDOW = 80;
+function settleOnRelease(f) {
+  const history = f.history ?? [];
+  const now = performance.now();
+  const before = [...history].reverse().find((h) => h.t <= now - RELEASE_WINDOW);
+  const step = Number(f.range.step) || 1;
+  const current = Number(f.range.value);
+  if (before && before.v !== current && Math.abs(before.v - current) <= step * 2) {
+    f.range.value = before.v;
+    state[f.key] = before.v;
+  }
+  f.history = [];
+}
+
 for (const f of fields) {
   f.range.addEventListener('input', () => {
     state[f.key] = Number(f.range.value);
+    (f.history ??= []).push({ t: performance.now(), v: state[f.key] });
+    if (f.history.length > 30) f.history.shift();
     render({ quick: true });
     save();
   });
-  // 指を離したら周囲長も含めて合わせ直す
-  f.range.addEventListener('change', () => render());
+  // 指を離したら、離す瞬間のずれを取り消してから周囲長も含めて合わせ直す
+  f.range.addEventListener('change', () => {
+    settleOnRelease(f);
+    save();
+    render();
+  });
 
   // 入力途中（空欄や範囲外）は反映せず、確定時に範囲内へ丸める
   f.number.addEventListener('input', () => {
@@ -637,6 +668,46 @@ for (const f of girthFields) {
       const { min, max } = limits(f);
       state[f.key] = round1(THREE.MathUtils.clamp(v, min, max));
     }
+    save();
+    render();
+  });
+}
+
+// −／＋ ボタン: 押すと1目盛り、長押しで連続して（だんだん速く）動かす。離したら全体を合わせ直す
+const STEPS = { height: 0.5, weight: 0.5, age: 1, muscle: 1 };
+for (const button of document.querySelectorAll('.stepper')) {
+  const f = fields.find((x) => x.key === button.dataset.field);
+  const dir = Number(button.dataset.dir);
+  let timer = null;
+  const bump = () => {
+    const { min, max } = limits(f);
+    const current = state[f.key] ?? autoMuscle;
+    state[f.key] = round1(THREE.MathUtils.clamp(current + dir * STEPS[f.key], min, max));
+    render({ quick: true });
+  };
+  const stop = () => {
+    if (timer == null) return;
+    clearTimeout(timer);
+    timer = null;
+    save();
+    render();
+  };
+  button.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    bump();
+    let delay = 400;
+    const repeat = () => {
+      bump();
+      delay = Math.max(40, delay * 0.8);
+      timer = setTimeout(repeat, delay);
+    };
+    timer = setTimeout(repeat, delay);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) button.addEventListener(type, stop);
+  // キーボード操作（Enter / Space）
+  button.addEventListener('click', (e) => {
+    if (e.detail !== 0) return;
+    bump();
     save();
     render();
   });
