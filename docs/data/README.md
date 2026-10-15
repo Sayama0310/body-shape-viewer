@@ -163,15 +163,3 @@ python tools/export/export_anny.py   # docs/data/ に上書きする
 初回は Anny がアセットを解析してキャッシュを作るため数分かかる（キャッシュ先は `ANNY_CACHE_DIR`、既定は `~/.cache/anny/`）。
 フォーマットを変えたら `anny-body.json` の `formatVersion` を上げ、このファイルを更新する。
 
-## 肌の塗り分け（`skin-regions.*`）
-
-`tools/export/export_skin.py` が書き出す。Anny に同梱の MPFB2 の領域マスク（`data/mpfb2/textures/mpfb_*.jpg`, CC0）を
-各頂点の UV で読み取った、頂点ごとの部位の重み。
-
-| ファイル | 中身 |
-|---|---|
-| `skin-regions.json` | `channels`（並び順: `lips`, `nails`, `areolae`, `eyelids`）、頂点数 |
-| `skin-regions.bin` | Uint8 `vertexCount × channels`。0〜255 = その部位である度合い |
-
-アプリは選んだ肌の色から部位ごとの色（唇は赤み、爪は明るく、など）を作り、この重みで混ぜて頂点色にする。
-テクスチャそのものは描画に使わない（UV で頂点を分ける必要がなく、iPhone でも負荷が増えない）。

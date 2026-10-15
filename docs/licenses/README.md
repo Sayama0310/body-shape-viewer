@@ -6,7 +6,7 @@
 |---|---|---|---|
 | three.js r170 | `vendor/three/` | MIT | [`vendor/three/LICENSE`](../vendor/three/LICENSE) |
 | Anny 0.6.1（NAVER LABS Europe） | `data/anny-body.*` | Apache License 2.0 | [`anny-LICENSE.txt`](anny-LICENSE.txt) |
-| MakeHuman / MPFB2 のアセット（Anny が利用） | `data/anny-body.*` に含まれる形状、`data/skin-regions.*`（MPFB2 の肌の領域マスクから作った頂点ごとの重み） | CC0 1.0 | [`makehuman-mpfb2-CC0.md`](makehuman-mpfb2-CC0.md) |
+| MakeHuman / MPFB2 のアセット（Anny が利用） | `data/anny-body.*` に含まれる形状 | CC0 1.0 | [`makehuman-mpfb2-CC0.md`](makehuman-mpfb2-CC0.md) |
 | MakeHuman の服（下の「服・髪」を参照） | `data/assets/` | CC0 1.0 / CC BY 3.0 / CC BY 4.0 | 各ライセンスの公式ページ |
 
 ## Anny について

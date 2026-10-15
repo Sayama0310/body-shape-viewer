@@ -298,8 +298,8 @@ helpDialog.addEventListener('cancel', (e) => {
 });
 
 // --- 体形 ---
-// 肌の色は頂点色で塗る（唇・爪などの部位ごとに少し色を変える）
-const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.62, metalness: 0 });
+// 体の材質（肌の色は人ごとに変えるので、人ごとに複製して色を付ける）
+const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.62, metalness: 0 });
 
 // 肌の色のプリセット（明るい → 暗い）。4 番目がこれまでの色
 const SKIN_TONES = [
@@ -314,34 +314,13 @@ const SKIN_TONES = [
 ];
 const DEFAULT_SKIN = 3;
 
-async function loadSkinRegions() {
-  try {
-    const [meta, bin] = await Promise.all([
-      fetch(new URL('./data/skin-regions.json', import.meta.url)).then((r) => r.json()),
-      fetch(new URL('./data/skin-regions.bin', import.meta.url)).then((r) => r.arrayBuffer()),
-    ]);
-    return { channels: meta.channels, weights: new Uint8Array(bin) };
-  } catch (err) {
-    console.error(err);
-    return null; // 塗り分けなしで続ける
-  }
-}
-
-// 部位ごとの色: 肌の色に掛ける係数（線形の色空間）か、混ぜる色
-const REGION_TINTS = {
-  lips: (c) => c.clone().multiply(new THREE.Color(0.82, 0.52, 0.52)),
-  nails: (c) => c.clone().lerp(new THREE.Color(1, 0.86, 0.84), 0.45),
-  areolae: (c) => c.clone().multiply(new THREE.Color(0.72, 0.56, 0.52)),
-  eyelids: (c) => c.clone().multiplyScalar(0.88),
-};
-
 function showStatus(text) {
   if (text) statusEl.textContent = text; // 消すときは文字を残したままフェードアウトさせる
   statusEl.classList.toggle('is-shown', Boolean(text));
   statusEl.setAttribute('aria-hidden', String(!text));
 }
 
-// 全員で共有するデータ（体形データの共通部分・肌の塗り分け・服の一覧）
+// 全員で共有するデータ（体形データの共通部分・服の一覧）
 let shared = null;
 let catalog = [];
 const loadedAssets = new Map(); // id -> Promise<Attachment>（人ごとに別のメッシュを作るので、読み込んだデータだけ共有）
@@ -388,14 +367,12 @@ class Person {
     this.model = model;
     this.mapShape = createShapeMapper(model);
     this.positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
-    this.colors = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', this.positions);
-    geometry.setAttribute('color', this.colors);
     this.fullIndex = new THREE.BufferAttribute(model.index, 1);
     this.visibleIndex = this.fullIndex;
     geometry.setIndex(this.fullIndex);
-    this.mesh = new THREE.Mesh(geometry, bodyMaterial);
+    this.mesh = new THREE.Mesh(geometry, bodyMaterial.clone());
     this.mesh.castShadow = true;
     // 体と、体に追従するアセット（服・髪）をまとめて接地させる
     this.figure = new THREE.Group();
@@ -410,6 +387,7 @@ class Person {
     if (this.figure) {
       scene.remove(this.figure);
       this.mesh.geometry.dispose();
+      this.mesh.material.dispose();
       for (const a of this.worn) a.mesh.geometry.dispose();
     }
     this.label.remove();
@@ -417,23 +395,7 @@ class Person {
 
   applySkin() {
     if (!this.model) return;
-    const base = new THREE.Color(SKIN_TONES[this.state.skin].hex);
-    const colors = this.colors.array;
-    const regions = shared.skinRegions;
-    const tints = regions ? regions.channels.map((name) => REGION_TINTS[name]?.(base) ?? base) : [];
-    const n = this.model.vertexCount;
-    const c = new THREE.Color();
-    for (let i = 0; i < n; i++) {
-      c.copy(base);
-      for (let k = 0; k < tints.length; k++) {
-        const w = regions.weights[i * tints.length + k] / 255;
-        if (w > 0) c.lerp(tints[k], w);
-      }
-      colors[i * 3] = c.r;
-      colors[i * 3 + 1] = c.g;
-      colors[i * 3 + 2] = c.b;
-    }
-    this.colors.needsUpdate = true;
+    this.mesh.material.color.set(SKIN_TONES[this.state.skin].hex);
   }
 
   // 入力から体形を合成する。quick: スライダー操作中（周囲長の調整は前回のまま身長・体重だけ合わせる）
@@ -716,8 +678,7 @@ function updateLabels() {
 async function initScene() {
   showStatus('体形データを読み込み中…');
   try {
-    const [body, skinRegions] = await Promise.all([loadBodyData(), loadSkinRegions()]);
-    shared = { body, skinRegions };
+    shared = { body: await loadBodyData() };
   } catch (err) {
     console.error(err);
     showStatus('体形データを読み込めませんでした。再読み込みしてください。');
