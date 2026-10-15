@@ -1,0 +1,5 @@
+# Anny 本体のみ（anny[smpl] などの非商用アセットは入れない）
+anny==0.6.1
+torch>=2.0
+numpy
+roma
