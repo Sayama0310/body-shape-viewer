@@ -22,32 +22,157 @@ const GIRTH_LABELS = { chest: '胸囲', waist: 'ウエスト', hip: 'ヒップ' 
 // --- シーン ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xe9e9ee);
 
-const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 50);
-camera.position.set(1.2, 1.2, 3.4);
+const FOV = 35;
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 50);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8a99, 1.6));
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
-keyLight.position.set(2, 4, 3);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8a8a99, 1.3);
+scene.add(hemiLight);
+// 主光源（影を落とす）・補助光・輪郭を出す逆光
+const keyLight = new THREE.DirectionalLight(0xfff3e6, 2.2);
+keyLight.position.set(1.5, 4, 2.5);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(1024, 1024);
+Object.assign(keyLight.shadow.camera, { left: -1, right: 1, top: 2.4, bottom: -0.2, near: 0.5, far: 10 });
+keyLight.shadow.bias = -0.0005;
+keyLight.shadow.normalBias = 0.02;
+keyLight.shadow.radius = 4;
 scene.add(keyLight);
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.6);
-rimLight.position.set(-2, 2, -3);
+const fillLight = new THREE.DirectionalLight(0xe6eeff, 0.6);
+fillLight.position.set(-2.5, 1.5, 1.5);
+scene.add(fillLight);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.9);
+rimLight.position.set(-1, 2.5, -3);
 scene.add(rimLight);
 
+// 床: 外へ向かって消える円と、体の影
+// 円の色は material.color、ぼかしは alphaMap（白→黒の放射グラデーション）で付ける
+function makeFadeTexture() {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, '#fff');
+  g.addColorStop(0.6, '#fff');
+  g.addColorStop(1, '#000');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(0.9, 64),
+  new THREE.MeshBasicMaterial({ alphaMap: makeFadeTexture(), transparent: true, depthWrite: false, toneMapped: false }),
+);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.ShadowMaterial({ opacity: 0.22 }));
+shadowFloor.rotation.x = -Math.PI / 2;
+shadowFloor.position.y = 0.001;
+shadowFloor.receiveShadow = true;
+scene.add(shadowFloor);
+
+// 背景と床の色は CSS の変数から取る（ダークモードに追従する）
+function applyTheme() {
+  const css = getComputedStyle(document.documentElement);
+  scene.background = new THREE.Color(css.getPropertyValue('--scene-bg').trim());
+  floor.material.color.set(css.getPropertyValue('--floor').trim());
+  const shadowOpacity = parseFloat(css.getPropertyValue('--shadow-opacity'));
+  shadowFloor.material.opacity = Number.isFinite(shadowOpacity) ? shadowOpacity : 0.22;
+}
+applyTheme();
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0.85, 0);
 controls.enableDamping = true;
 controls.enablePan = false;
-controls.minDistance = 1.0;
+controls.minDistance = 0.8;
 controls.maxDistance = 8;
+controls.maxPolarAngle = Math.PI * 0.55; // 床の下には回り込まない
+
+// --- 視点 ---
+// 体の高さに合わせて注視点と距離を決める。ボタンで正面・横・後ろへ回り込む
+const VIEWS = { front: 0, side: Math.PI / 2, back: Math.PI };
+const VIEW_ELEVATION = THREE.MathUtils.degToRad(6);
+let bodyHeight = 1.7;
+let tween = null;
+
+function fitDistance() {
+  const halfFov = THREE.MathUtils.degToRad(FOV / 2);
+  const vertical = (bodyHeight * 0.62) / Math.tan(halfFov);
+  // 横長でない（縦長の）表示では横幅でも収まるようにする
+  const horizontal = (0.5 / Math.tan(halfFov)) / Math.min(camera.aspect || 1, 1);
+  return Math.max(vertical, horizontal);
+}
+
+function sphericalOf(position) {
+  return new THREE.Spherical().setFromVector3(position.clone().sub(controls.target));
+}
+
+function setView(name, { animate = true } = {}) {
+  const to = new THREE.Spherical(fitDistance(), Math.PI / 2 - VIEW_ELEVATION, VIEWS[name]);
+  if (!animate) {
+    camera.position.setFromSpherical(to).add(controls.target);
+    controls.update();
+    return;
+  }
+  const from = sphericalOf(camera.position);
+  // 近い向きに回る
+  let dTheta = to.theta - from.theta;
+  dTheta = Math.atan2(Math.sin(dTheta), Math.cos(dTheta));
+  tween = { from, to: new THREE.Spherical(to.radius, to.phi, from.theta + dTheta), start: performance.now(), duration: 450 };
+}
+
+function stepTween(now) {
+  if (!tween) return;
+  const t = Math.min((now - tween.start) / tween.duration, 1);
+  const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; // ease-in-out
+  const { from, to } = tween;
+  const s = new THREE.Spherical(
+    from.radius + (to.radius - from.radius) * e,
+    from.phi + (to.phi - from.phi) * e,
+    from.theta + (to.theta - from.theta) * e,
+  );
+  camera.position.setFromSpherical(s).add(controls.target);
+  if (t >= 1) tween = null;
+}
+
+// 指で回し始めたら視点の移動をやめる
+controls.addEventListener('start', () => (tween = null));
+
+// 身長が変わったら注視点の高さを体の中ほどに合わせる（カメラも同じだけ動かす）
+function setBodyHeight(h) {
+  const dy = h * 0.5 - controls.target.y;
+  bodyHeight = h;
+  controls.target.y += dy;
+  camera.position.y += dy;
+}
+
+// 最初は少し斜め前から見る
+controls.target.set(0, bodyHeight * 0.5, 0);
+camera.position.setFromSpherical(new THREE.Spherical(fitDistance(), Math.PI / 2 - VIEW_ELEVATION, THREE.MathUtils.degToRad(20))).add(controls.target);
 controls.update();
 
+for (const button of document.querySelectorAll('[data-view]')) {
+  button.addEventListener('click', () => setView(button.dataset.view));
+}
+
+// --- 使い方 ---
+const helpDialog = document.getElementById('help');
+document.getElementById('help-button').addEventListener('click', () => helpDialog.showModal());
+document.getElementById('help-close').addEventListener('click', () => helpDialog.close());
+helpDialog.addEventListener('click', (e) => {
+  if (e.target === helpDialog) helpDialog.close(); // 外側を押したら閉じる
+});
+
 // --- 体形 ---
-const material = new THREE.MeshStandardMaterial({ color: 0xd9a988, roughness: 0.7 });
+const material = new THREE.MeshStandardMaterial({ color: 0xd8a585, roughness: 0.62, metalness: 0 });
 let body = null; // { model, mapShape, mesh, positions }
 
 function showStatus(text) {
@@ -64,6 +189,7 @@ async function initBody() {
     geometry.setAttribute('position', positions);
     geometry.setIndex(new THREE.BufferAttribute(model.index, 1));
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
     scene.add(mesh);
     body = { model, mapShape: createShapeMapper(model), mesh, positions };
     updateBody();
@@ -80,8 +206,9 @@ function updateBody({ quick = false } = {}) {
   const girthsCm = Object.fromEntries(GIRTHS.map((g) => [g, state[g] ?? NaN]));
   const shape = mapShape({ sex: state.sex, heightCm: state.height, weightKg: state.weight, girthsCm }, { quick });
   model.blend(shape.params, positions.array);
-  const { minY, girths } = model.measure(positions.array);
+  const { minY, girths, height } = model.measure(positions.array);
   showGirths(girths);
+  setBodyHeight(height);
   mesh.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
   positions.needsUpdate = true;
   mesh.geometry.computeVertexNormals();
@@ -267,7 +394,8 @@ function resize() {
 new ResizeObserver(resize).observe(container);
 resize();
 
-renderer.setAnimationLoop(() => {
+renderer.setAnimationLoop((now) => {
+  stepTween(now);
   controls.update();
   renderer.render(scene, camera);
 });
