@@ -18,14 +18,27 @@
   <main class="app">
     <div id="viewer" class="viewer"></div>
     <form class="controls" id="controls" onsubmit="return false">
-      <label class="field">
-        <span class="field-head">身長 <output id="height-out">170</output> cm</span>
-        <input type="range" id="height" min="130" max="200" step="1" value="170">
-      </label>
-      <label class="field">
-        <span class="field-head">体重 <output id="weight-out">65</output> kg</span>
-        <input type="range" id="weight" min="30" max="150" step="1" value="65">
-      </label>
+      <div class="row">
+        <div class="segmented" role="radiogroup" aria-label="性別">
+          <label><input type="radio" name="sex" value="male" checked><span>男性</span></label>
+          <label><input type="radio" name="sex" value="female"><span>女性</span></label>
+        </div>
+        <p class="bmi">BMI <output id="bmi">22.5</output> <span id="bmi-class" class="bmi-class">普通体重</span></p>
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label for="height-num">身長</label>
+          <span class="num"><input type="number" id="height-num" inputmode="decimal" min="130" max="200" step="0.1" value="170"> cm</span>
+        </div>
+        <input type="range" id="height" min="130" max="200" step="1" value="170" aria-label="身長">
+      </div>
+      <div class="field">
+        <div class="field-head">
+          <label for="weight-num">体重</label>
+          <span class="num"><input type="number" id="weight-num" inputmode="decimal" min="30" max="150" step="0.1" value="65"> kg</span>
+        </div>
+        <input type="range" id="weight" min="30" max="150" step="1" value="65" aria-label="体重">
+      </div>
     </form>
   </main>
   <script type="module" src="app.js"></script>

@@ -55,15 +55,106 @@ html, body {
 }
 
 .field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 15px;
   color: var(--sub);
 }
 
-.field-head output {
+.num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 16px 以上にして iOS のフォーカス時ズームを防ぐ */
+.num input {
+  width: 5.5em;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  -moz-appearance: textfield;
+}
+
+.num input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.num input::-webkit-inner-spin-button,
+.num input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--bg);
+  border-radius: 9px;
+}
+
+.segmented label {
+  position: relative;
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented span {
+  display: block;
+  padding: 7px 18px;
+  font-size: 15px;
+  border-radius: 7px;
+  color: var(--sub);
+}
+
+.segmented input:checked + span {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.segmented input:focus-visible + span {
+  outline: 2px solid var(--accent);
+}
+
+.bmi {
+  margin: 0;
+  font-size: 15px;
+  color: var(--sub);
+  text-align: right;
+}
+
+.bmi output {
   font-size: 20px;
   font-weight: 600;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+.bmi-class {
+  display: block;
+  font-size: 12px;
 }
 
 input[type="range"] {
