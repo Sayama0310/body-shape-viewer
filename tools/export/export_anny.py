@@ -25,7 +25,7 @@ import torch
 import anny
 from anny.anthropometry import BASE_MESH_WAIST_VERTICES
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 
 # 書き出す次元とアンカー値（Anny のフェノタイプ値, 0〜1）。順序がバイナリ内の角の並び順になる
 DIMS = {
@@ -53,8 +53,13 @@ POSE_DEG = {
 # 周囲長を調整する Anny の局所変形（値 -1〜1。正で incr、負で decr のターゲットが効く）
 LOCAL_CHANGES = {
     "chest": "measure-bust-circ-incr",
+    "underbust": "measure-underbust-circ-incr",
     "waist": "measure-waist-circ-incr",
     "hip": "measure-hips-circ-incr",
+    "upperarm": "measure-upperarm-circ-incr",
+    "thigh": "measure-thigh-circ-incr",
+    "calf": "measure-calf-circ-incr",
+    "ankle": "measure-ankle-circ-incr",
 }
 # 顔の肉付き（頭・頬・二重あご）。値 +1 / -1 のときに足す Anny の局所変形とその量
 FACE_FAT = {
@@ -119,38 +124,100 @@ def hull_perimeter(points):
     return float(np.linalg.norm(hull - np.roll(hull, 1, axis=0), axis=1).sum())
 
 
-def measurement_vertices(model, vertices_for):
-    """周囲長を測る頂点の番号を、基準の体形の上で選ぶ（番号はどの体形でも同じ部位を指す）。"""
+def mesh_edges(faces):
+    e = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    return np.unique(np.sort(e, axis=1), axis=0)
+
+
+def slice_at(v, edges, mask, y):
+    """高さ y の水平面と交わる辺（両端が mask の頂点）を (a, b, t) で返す。交点は v[a] + t (v[b] - v[a])"""
+    a, b = edges[:, 0], edges[:, 1]
+    ya, yb = v[a, 1], v[b, 1]
+    hit = mask[a] & mask[b] & ((ya - y) * (yb - y) < 0)
+    a, b = a[hit], b[hit]
+    t = (y - v[a, 1]) / (v[b, 1] - v[a, 1])
+    return a, b, t
+
+
+def section_points(v, section):
+    a, b, t = section
+    return v[a] + t[:, None] * (v[b] - v[a])
+
+
+def measurement_sections(model, vertices_for, local_full):
+    """周囲長を測る断面を、基準の体形の上で決める。断面は水平面と交わる辺 (a, b, t) の集合で、
+    ほかの体形でも同じ辺・同じ内分比で点を取る（どの体形でも同じ部位を指す）。
+    左右がある部位は左側（+X）だけで測る。"""
     weights = model.vertex_bone_weights.numpy()
     bones = model.vertex_bone_indices.numpy()
     dominant = bones[np.arange(len(bones)), weights.argmax(axis=1)]
-    arm_bones = [i for i, b in enumerate(model.bone_labels) if any(k in b for k in ARM_BONE_KEYWORDS)]
+    labels = model.bone_labels
+    arm_bones = [i for i, b in enumerate(labels) if any(k in b for k in ARM_BONE_KEYWORDS)]
     body = ~np.isin(dominant, arm_bones)
+    edges = mesh_edges(model.faces.numpy())
 
-    def band(v, y):
-        return np.flatnonzero(body & (np.abs(v[:, 1] - y) < BAND))
+    def of_bones(*names):
+        return np.isin(dominant, [labels.index(n) for n in names])
 
+    def perimeter(v, y, mask):
+        sec = slice_at(v, edges, mask, y)
+        return hull_perimeter(section_points(v, sec)) if len(sec[0]) >= 3 else 0.0
+
+    def levels_of(v, mask, lo, hi):
+        ys = v[mask, 1]
+        return np.arange(ys.min() + lo * np.ptp(ys), ys.min() + hi * np.ptp(ys), 0.002)
+
+    def pick(v, mask, levels, largest):
+        scored = [(perimeter(v, y, mask), y) for y in levels]
+        scored = [e for e in scored if e[0] > 0]
+        return (max if largest else min)(scored)[1]
+
+    def most_sensitive(v, mask, levels, name):
+        """局所変形 name で周囲長が最も変わる高さ（Anny の計測ターゲットが効く位置）"""
+        hi, lo = v + local_full[name][0], v + local_full[name][1]
+
+        def spread(y):
+            sec = slice_at(v, edges, mask, y)
+            if len(sec[0]) < 3:
+                return 0.0
+            return hull_perimeter(section_points(hi, sec)) - hull_perimeter(section_points(lo, sec))
+
+        return max(levels, key=spread)
+
+    result = {}
     # 胸囲: 女性の基準体形でバストの頂点（胴の最も前に出た点）の高さ
     female = vertices_for({**REFERENCE_SHAPE, "gender": 1.0})
     foot, top = female[:, 1].min(), female[:, 1].max()
     height = top - foot
     region = body & (female[:, 1] > foot + 0.62 * height) & (female[:, 1] < foot + 0.80 * height)
     chest_y = female[np.flatnonzero(region)[female[region, 2].argmax()], 1]
-    chest = band(female, chest_y)
+    result["chest"] = slice_at(female, edges, body, chest_y)
+    # アンダーバスト: バストの頂点の 3〜12cm 下で周囲長が最小の高さ
+    result["underbust"] = slice_at(female, edges, body, pick(female, body, np.arange(chest_y - 0.12, chest_y - 0.03, 0.002), False))
 
-    # ウエスト: Anny の anthropometry.py が使うウエストのループ
+    # ウエスト: Anny の anthropometry.py が使うウエストのループ（頂点そのもの = a = b, t = 0）
     base = model.base_mesh_vertex_indices.numpy().tolist()
     waist = np.array([base.index(i) for i in BASE_MESH_WAIST_VERTICES])
+    result["waist"] = (waist, waist, np.zeros(len(waist)))
 
-    # ヒップ: 基準体形で周囲長が最大になる高さ
     ref = vertices_for(REFERENCE_SHAPE)
     foot, top = ref[:, 1].min(), ref[:, 1].max()
     height = top - foot
-    levels = np.arange(foot + 0.42 * height, foot + 0.58 * height, 0.005)
-    hip_y = max(levels, key=lambda y: hull_perimeter(ref[band(ref, y)]))
-    hip = band(ref, hip_y)
+    # ヒップ: 周囲長が最大になる高さ
+    result["hip"] = slice_at(ref, edges, body, pick(ref, body, np.arange(foot + 0.42 * height, foot + 0.58 * height, 0.002), True))
 
-    return {"chest": chest, "waist": waist, "hip": hip}
+    # 手足（左側）
+    upperarm = of_bones("upperarm01.L", "upperarm02.L")
+    thigh = of_bones("upperleg01.L", "upperleg02.L")
+    lowerleg = of_bones("lowerleg01.L", "lowerleg02.L")
+    ankle = of_bones("lowerleg01.L", "lowerleg02.L", "foot.L")
+    ys = ref[upperarm, 1]
+    result["upperarm"] = slice_at(ref, edges, upperarm, (ys.min() + ys.max()) / 2)  # 肩と肘の中ほど
+    result["thigh"] = slice_at(ref, edges, thigh, most_sensitive(ref, thigh, levels_of(ref, thigh, 0.2, 0.9), "thigh"))
+    result["calf"] = slice_at(ref, edges, lowerleg, pick(ref, lowerleg, levels_of(ref, lowerleg, 0.4, 0.85), True))
+    # 足首: 床から 6〜16cm で最も細い高さ
+    result["ankle"] = slice_at(ref, edges, ankle, pick(ref, ankle, np.arange(foot + 0.06, foot + 0.16, 0.002), False))
+    return result
 
 
 def interpolate(corners, values):
@@ -188,11 +255,23 @@ def main():
         "gender": 0.5, "muscle": 0.5, "weight": 0.5, "height": 0.3,
     }
 
-    def vertices_for(phenotypes, local_changes=None):
+    def run(phenotypes, local_changes=None):
         kwargs = {k: torch.tensor([v], dtype=torch.float64) for k, v in phenotypes.items()}
         local = {k: torch.tensor([v], dtype=torch.float64) for k, v in (local_changes or {}).items()}
-        out = model(pose_parameters=pose, phenotype_kwargs=kwargs, local_changes_kwargs=local)
-        return to_three(out["vertices"][0].numpy())
+        return model(pose_parameters=pose, phenotype_kwargs=kwargs, local_changes_kwargs=local)
+
+    def vertices_for(phenotypes, local_changes=None):
+        return to_three(run(phenotypes, local_changes)["vertices"][0].numpy())
+
+    def local_delta(phenotypes, local_changes):
+        """局所変形の差分。静止姿勢の頂点の差（変形が触る頂点だけが動く）を、各頂点のスキニングの回転で姿勢側に回す。
+        姿勢をつけた頂点どうしの差を取ると、局所変形がボーンの位置を少し動かすぶん全身がずれてしまうため"""
+        base, changed = run(phenotypes), run(phenotypes, local_changes)
+        rest_delta = (changed["rest_vertices"][0] - base["rest_vertices"][0]).numpy()
+        transforms = (base["bone_poses"][0] @ torch.linalg.inv(base["rest_bone_poses"][0]))[:, :3, :3].numpy()
+        w = model.vertex_bone_weights.numpy()
+        rot = np.einsum("vk,vkij->vij", w, transforms[model.vertex_bone_indices.numpy()])
+        return to_three(np.einsum("vij,vj->vi", rot, rest_delta))
 
     combos = list(itertools.product(*DIMS.values()))
     corners_by_age = [
@@ -220,21 +299,32 @@ def main():
 
     # 局所変形の差分（基準体形で +1 / -1 にしたときの変化）。並びは [変形][符号 +, -][頂点][xyz]
     reference = vertices_for(reference_phenotypes)
-    local = np.stack([
-        np.stack([vertices_for(reference_phenotypes, {label: sign}) - reference for sign in (1.0, -1.0)])
-        for label in LOCAL_CHANGES.values()
-    ])
-    local_scale = float(np.abs(local).max()) / 32767
-    local_quantized = np.round(local / local_scale).astype("<i2")
+    # 動く頂点だけの疎な差分にする。変形ごとに [符号 +, -][頂点][xyz] を順に並べる
+    local_full = {
+        name: np.stack([local_delta(reference_phenotypes, {label: sign}) for sign in (1.0, -1.0)])
+        for name, label in LOCAL_CHANGES.items()
+    }
+    local_index, local_sparse, local_ranges = [], [], {}
+    for name, full in local_full.items():
+        idx = np.flatnonzero(np.abs(full).max(axis=(0, 2)) > SPARSE_EPS)
+        local_ranges[name] = {"start": sum(len(i) for i in local_index), "count": int(len(idx))}
+        local_index.append(idx)
+        local_sparse.append(full[:, idx].reshape(-1))
+    local_index = np.concatenate(local_index)
+    local_flat = np.concatenate(local_sparse)
+    local_scale = float(np.abs(local_flat).max()) / 32767
+    local_quantized = np.round(local_flat / local_scale).astype("<i2")
 
     # 顔の肉付き: 動く頂点（頭部）だけの疎な差分。並びは [符号 +, -][頂点][xyz]
-    face = np.stack([vertices_for(reference_phenotypes, FACE_FAT[sign]) - reference for sign in (1.0, -1.0)])
+    face = np.stack([local_delta(reference_phenotypes, FACE_FAT[sign]) for sign in (1.0, -1.0)])
     face_index = np.flatnonzero(np.abs(face).max(axis=(0, 2)) > SPARSE_EPS)
     face = face[:, face_index]
     face_scale = float(np.abs(face).max()) / 32767
     face_quantized = np.round(face / face_scale).astype("<i2")
 
-    measurements = measurement_vertices(model, lambda ph: vertices_for({**ph, "age": reference_phenotypes["age"]}))
+    measurements = measurement_sections(
+        model, lambda ph: vertices_for({**ph, "age": reference_phenotypes["age"]}), local_full
+    )
 
     args.out.mkdir(parents=True, exist_ok=True)
     blobs = [
@@ -242,6 +332,7 @@ def main():
         ("mean", mean.astype("<f4")),
         ("deltas", quantized),
         ("ageDeltas", age_quantized),
+        ("localIndex", local_index.astype("<u2")),
         ("localDeltas", local_quantized),
         ("faceFatIndex", face_index.astype("<u2")),
         ("faceFatDeltas", face_quantized),
@@ -267,11 +358,14 @@ def main():
         "poseDeg": POSE_DEG,
         "deltaScale": scale,
         "localChanges": [
-            {"name": name, "annyLabel": label, "range": [-1, 1]} for name, label in LOCAL_CHANGES.items()
+            {"name": name, "annyLabel": label, "range": [-1, 1], **local_ranges[name]}
+            for name, label in LOCAL_CHANGES.items()
         ],
         "localDeltaScale": local_scale,
         "faceFat": {"annyLabels": {str(int(k)): v for k, v in FACE_FAT.items()}, "deltaScale": face_scale},
-        "measurements": {name: idx.tolist() for name, idx in measurements.items()},
+        "measurements": {
+            name: {"a": a.tolist(), "b": b.tolist(), "t": np.round(t, 5).tolist()} for name, (a, b, t) in measurements.items()
+        },
         "layout": layout,
     }
     (args.out / "anny-body.json").write_text(json.dumps(meta, indent=2) + "\n")
@@ -280,12 +374,14 @@ def main():
     print(f"bin size: {offset / 1e6:.2f} MB, quantization error: {quant_error * 1000:.3f} mm, age {age_quant_error * 1000:.3f} mm")
     print(f"face fat: {len(face_index)} vertices")
 
-    for name, idx in measurements.items():
-        base_c = hull_perimeter(reference[idx])
-        k = list(LOCAL_CHANGES).index(name)
-        lo = hull_perimeter((reference + local[k, 1])[idx])
-        hi = hull_perimeter((reference + local[k, 0])[idx])
-        print(f"{name}: {len(idx)} vertices, reference {base_c * 100:.1f} cm (local change -1..+1: {lo * 100:.1f}..{hi * 100:.1f} cm)")
+    for name, sec in measurements.items():
+        base_c = hull_perimeter(section_points(reference, sec))
+        lo = hull_perimeter(section_points(reference + local_full[name][1], sec))
+        hi = hull_perimeter(section_points(reference + local_full[name][0], sec))
+        print(
+            f"{name}: {len(sec[0])} points, reference {base_c * 100:.1f} cm "
+            f"(local change -1..+1: {lo * 100:.1f}..{hi * 100:.1f} cm, {local_ranges[name]['count']} moving vertices)"
+        )
 
     # 補間が Anny 本体の出力にどれだけ近いか（姿勢の回転が体形に依存するぶん厳密には一致しない）
     rng = np.random.default_rng(0)

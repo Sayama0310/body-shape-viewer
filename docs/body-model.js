@@ -2,13 +2,13 @@
 // パラメータに応じて角の頂点と局所変形を重み付き合成する。
 
 const DATA_URL = new URL('./data/anny-body.json', import.meta.url);
-const FORMAT_VERSION = 3;
+const FORMAT_VERSION = 4;
 
 // 体重の換算に使う密度（Anny の anthropometry.py と同じ値）
 export const BODY_DENSITY = 980; // kg/m³
 
 // 周囲長の名前（data の measurements / localChanges の name と同じ）
-export const GIRTHS = ['chest', 'waist', 'hip'];
+export const GIRTHS = ['chest', 'underbust', 'waist', 'hip', 'upperarm', 'thigh', 'calf', 'ankle'];
 
 export async function loadBodyModel() {
   const meta = await fetchJson(DATA_URL);
@@ -89,6 +89,22 @@ function solve(A, b) {
   return x;
 }
 
+// 疎な差分（動く頂点 index[start..start+count) と、その差分 [符号 +, -][頂点][xyz]）を value 倍して out に足す。
+// value が正なら incr、負なら decr の差分を使う
+function addSparse(out, index, deltas, start, count, value, scale) {
+  const v = Math.min(Math.max(value ?? 0, -1), 1);
+  if (v === 0) return;
+  const base = (start * 2 + (v > 0 ? 0 : count)) * 3;
+  const w = Math.abs(v) * scale;
+  for (let i = 0; i < count; i++) {
+    const o = index[start + i] * 3;
+    const d = base + i * 3;
+    out[o] += w * deltas[d];
+    out[o + 1] += w * deltas[d + 1];
+    out[o + 2] += w * deltas[d + 2];
+  }
+}
+
 export class BodyModel {
   constructor(meta, buffer) {
     this.vertexCount = meta.vertexCount;
@@ -104,10 +120,11 @@ export class BodyModel {
     this.faceFatIndex = view(buffer, meta.layout.faceFatIndex, Uint16Array);
     this.faceFatDeltas = view(buffer, meta.layout.faceFatDeltas, Int16Array);
     this.faceFatScale = meta.faceFat.deltaScale;
+    this.localIndex = view(buffer, meta.layout.localIndex, Uint16Array);
     this.localDeltas = view(buffer, meta.layout.localDeltas, Int16Array);
     this.localDeltaScale = meta.localDeltaScale;
-    this.localNames = meta.localChanges.map((c) => c.name);
-    this.girthVertices = meta.measurements;
+    this.localChanges = meta.localChanges; // [{name, start, count}]
+    this.girthSections = meta.measurements; // {name: {a, b, t}}
     this.cornerSize = this.vertexCount * 3;
   }
 
@@ -151,27 +168,15 @@ export class BodyModel {
       // 年齢: "old" の角との差を t の割合で足す
       if (t > 0) add(this.ageDeltas, corner * size, weight * t * this.ageDeltaScale);
     }
-    const face = Math.min(Math.max(params.faceFat ?? 0, -1), 1);
-    if (face !== 0) {
-      const idx = this.faceFatIndex;
-      const n = idx.length;
-      const base = (face > 0 ? 0 : 1) * n * 3;
-      const w = Math.abs(face) * this.faceFatScale;
-      for (let i = 0; i < n; i++) {
-        const o = idx[i] * 3;
-        const d = base + i * 3;
-        out[o] += w * this.faceFatDeltas[d];
-        out[o + 1] += w * this.faceFatDeltas[d + 1];
-        out[o + 2] += w * this.faceFatDeltas[d + 2];
-      }
-    }
-    this.localNames.forEach((name, k) => {
-      const v = Math.min(Math.max(params.local?.[name] ?? 0, -1), 1);
-      if (v === 0) return;
-      // 正なら incr、負なら decr の差分を |v| 倍して足す
-      add(this.localDeltas, (k * 2 + (v > 0 ? 0 : 1)) * size, Math.abs(v) * this.localDeltaScale);
-    });
+    addSparse(out, this.faceFatIndex, this.faceFatDeltas, 0, this.faceFatIndex.length, params.faceFat, this.faceFatScale);
+    for (const { name } of this.localChanges) this.addLocal(out, name, params.local?.[name]);
     return out;
+  }
+
+  // 局所変形 name を値 value（-1〜1）で out に足す（sign = -1 なら引く）
+  addLocal(out, name, value, sign = 1) {
+    const c = this.localChanges.find((l) => l.name === name);
+    addSparse(out, this.localIndex, this.localDeltas, c.start, c.count, value, this.localDeltaScale * sign);
   }
 
   // 頂点から身長（m）・体重（kg）・足裏の高さ（最小 Y）・周囲長（m）を測る
@@ -196,8 +201,11 @@ export class BodyModel {
     }
     const girths = {};
     for (const name of GIRTHS) {
-      const ids = this.girthVertices[name];
-      girths[name] = hullPerimeter(ids.map((i) => pos[i * 3]), ids.map((i) => pos[i * 3 + 2]));
+      // 断面: 基準体形で水平面と交わった辺 (a, b) を内分比 t で分けた点
+      const { a, b, t } = this.girthSections[name];
+      const xs = a.map((ai, k) => pos[ai * 3] + t[k] * (pos[b[k] * 3] - pos[ai * 3]));
+      const zs = a.map((ai, k) => pos[ai * 3 + 2] + t[k] * (pos[b[k] * 3 + 2] - pos[ai * 3 + 2]));
+      girths[name] = hullPerimeter(xs, zs);
     }
     return { height: maxY - minY, mass: (Math.abs(vol6) / 6) * BODY_DENSITY, minY, girths };
   }
@@ -212,6 +220,8 @@ export class BodyModel {
     start,
   ) {
     const scratch = this._scratch ?? (this._scratch = new Float32Array(this.cornerSize));
+    const baseScratch = this._baseScratch ?? (this._baseScratch = new Float32Array(this.cornerSize));
+    const work = this._work ?? (this._work = new Float32Array(this.cornerSize));
     const targets = fitGirths ? GIRTHS.filter((g) => Number.isFinite(girthsM[g])) : [];
     const freeMuscle = Boolean(muscleRange);
     const localAt = freeMuscle ? 3 : 2;
@@ -252,16 +262,34 @@ export class BodyModel {
     const eps = 1e-3;
     for (let iter = 0; iter < 12; iter++) {
       if (scaleBack(r).every((v) => Math.abs(v) < 0.1)) break;
-      // 有限差分のヤコビアン。アンカー上（補間の折れ目）でも両側の傾きが平均されるよう中心差分にする
+      // 有限差分のヤコビアン。アンカー上（補間の折れ目）でも両側の傾きが平均されるよう中心差分にする。
+      // 局所変形の列は、今の頂点に疎な差分を足し引きするだけで求める（全頂点を合成し直さない）
       const J = r.map(() => []);
+      const basePos = this.blend(toParams(x), baseScratch);
       for (let i = 0; i < x.length; i++) {
-        const xp = [...x];
-        const xm = [...x];
-        xp[i] = Math.min(x[i] + eps, upper[i]);
-        xm[i] = Math.max(x[i] - eps, lower[i]);
-        const rp = residuals(evalAt(xp));
-        const rm = residuals(evalAt(xm));
-        for (let k = 0; k < r.length; k++) J[k][i] = (rp[k] - rm[k]) / (xp[i] - xm[i]);
+        const lo = Math.max(x[i] - eps, lower[i]);
+        const hi = Math.min(x[i] + eps, upper[i]);
+        let rp;
+        let rm;
+        if (i >= localAt) {
+          const name = targets[i - localAt];
+          const at = (v) => {
+            work.set(basePos);
+            this.addLocal(work, name, x[i], -1);
+            this.addLocal(work, name, v);
+            return residuals(this.measure(work));
+          };
+          rp = at(hi);
+          rm = at(lo);
+        } else {
+          const xp = [...x];
+          const xm = [...x];
+          xp[i] = hi;
+          xm[i] = lo;
+          rp = residuals(evalAt(xp));
+          rm = residuals(evalAt(xm));
+        }
+        for (let k = 0; k < r.length; k++) J[k][i] = (rp[k] - rm[k]) / (hi - lo);
       }
       // (JᵀJ + λ diag) Δ = -Jᵀ r
       const n = x.length;
