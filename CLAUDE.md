@@ -26,6 +26,10 @@ ROADMAP.md を参照。
 - `docs/data/` … 書き出したメッシュ・ブレンドシェイプ
 - `tools/export/` … Anny からデータを書き出す Python スクリプト
 
+## 開発
+- ローカル確認: リポジトリ直下で `npx http-server docs -c-1 -p 8080` を実行し、http://localhost:8080/ を開く（`-c-1` でキャッシュ無効）
+- GitHub Pages は `Cache-Control: max-age=600` で配信されるため、マージ直後はブラウザに古いファイルが残ることがある（確認時は強制再読み込み）
+
 ## 作業分担
 - フロント: Claude セッション（Web）が実装し、PR を出す
 - Python のデータ書き出し: ローカルの Claude Code が実装・実行する（PyTorch 等のローカル環境が必要なため）
