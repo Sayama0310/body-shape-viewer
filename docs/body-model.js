@@ -2,7 +2,7 @@
 // パラメータに応じて角の頂点と局所変形を重み付き合成する。
 
 const DATA_URL = new URL('./data/anny-body.json', import.meta.url);
-const FORMAT_VERSION = 2;
+const FORMAT_VERSION = 3;
 
 // 体重の換算に使う密度（Anny の anthropometry.py と同じ値）
 export const BODY_DENSITY = 980; // kg/m³
@@ -97,6 +97,13 @@ export class BodyModel {
     this.mean = view(buffer, meta.layout.mean, Float32Array);
     this.deltas = view(buffer, meta.layout.deltas, Int16Array);
     this.deltaScale = meta.deltaScale;
+    this.ageAnchors = meta.age.anchors;
+    this.ageDeltas = view(buffer, meta.layout.ageDeltas, Int8Array);
+    this.ageDeltaScale = meta.age.deltaScale;
+    this.yearsToAnny = meta.age.yearsToAnny;
+    this.faceFatIndex = view(buffer, meta.layout.faceFatIndex, Uint16Array);
+    this.faceFatDeltas = view(buffer, meta.layout.faceFatDeltas, Int16Array);
+    this.faceFatScale = meta.faceFat.deltaScale;
     this.localDeltas = view(buffer, meta.layout.localDeltas, Int16Array);
     this.localDeltaScale = meta.localDeltaScale;
     this.localNames = meta.localChanges.map((c) => c.name);
@@ -118,16 +125,45 @@ export class BodyModel {
     return list;
   }
 
-  // params（{gender, muscle, weight, height} は 0〜1、local は {chest, waist, hip} で -1〜1）の
-  // 頂点を out に書き込む
+  // 歳を Anny の age（0〜1）に変換する（Anny の定義の区分線形）
+  annyAge(years) {
+    const { years: ys, anny: as } = this.yearsToAnny;
+    if (years <= ys[0]) return as[0];
+    for (let i = 1; i < ys.length; i++) {
+      if (years <= ys[i]) return as[i - 1] + ((years - ys[i - 1]) / (ys[i] - ys[i - 1])) * (as[i] - as[i - 1]);
+    }
+    return as[as.length - 1];
+  }
+
+  // params の頂点を out に書き込む。
+  // gender, muscle, weight, height は 0〜1、age は Anny の age（annyAge で変換した値）、
+  // local は {chest, waist, hip} で -1〜1、faceFat は顔の肉付き -1〜1
   blend(params, out = new Float32Array(this.cornerSize)) {
     const size = this.cornerSize;
     out.set(this.mean);
     const add = (src, base, w) => {
       for (let j = 0; j < size; j++) out[j] += w * src[base + j];
     };
+    const [a0, a1] = this.ageAnchors;
+    const t = Math.min(Math.max(((params.age ?? a0) - a0) / (a1 - a0), 0), 1);
     for (const { corner, weight } of this.cornerWeights(params)) {
       add(this.deltas, corner * size, weight * this.deltaScale);
+      // 年齢: "old" の角との差を t の割合で足す
+      if (t > 0) add(this.ageDeltas, corner * size, weight * t * this.ageDeltaScale);
+    }
+    const face = Math.min(Math.max(params.faceFat ?? 0, -1), 1);
+    if (face !== 0) {
+      const idx = this.faceFatIndex;
+      const n = idx.length;
+      const base = (face > 0 ? 0 : 1) * n * 3;
+      const w = Math.abs(face) * this.faceFatScale;
+      for (let i = 0; i < n; i++) {
+        const o = idx[i] * 3;
+        const d = base + i * 3;
+        out[o] += w * this.faceFatDeltas[d];
+        out[o + 1] += w * this.faceFatDeltas[d + 1];
+        out[o + 2] += w * this.faceFatDeltas[d + 2];
+      }
     }
     this.localNames.forEach((name, k) => {
       const v = Math.min(Math.max(params.local?.[name] ?? 0, -1), 1);
@@ -171,7 +207,10 @@ export class BodyModel {
   // fitGirths が真なら周囲長を指定した部位の局所変形。
   // 固定する値は muscle（muscleRange がないとき）と fixedLocal（局所変形）で渡す。
   // start は初期値（前回の解を渡すと反復が少なくて済む）
-  fit({ gender, heightM, massKg, girthsM = {}, muscle = 0.5, muscleRange = null, fitGirths = true, fixedLocal = {} }, start) {
+  fit(
+    { gender, age, faceFat = 0, heightM, massKg, girthsM = {}, muscle = 0.5, muscleRange = null, fitGirths = true, fixedLocal = {} },
+    start,
+  ) {
     const scratch = this._scratch ?? (this._scratch = new Float32Array(this.cornerSize));
     const targets = fitGirths ? GIRTHS.filter((g) => Number.isFinite(girthsM[g])) : [];
     const freeMuscle = Boolean(muscleRange);
@@ -181,6 +220,8 @@ export class BodyModel {
     const upper = [1, 1, ...(freeMuscle ? [muscleRange[1]] : []), ...targets.map(() => 1)];
     const toParams = (x) => ({
       gender,
+      age,
+      faceFat,
       muscle: freeMuscle ? x[2] : muscle,
       height: x[0],
       weight: x[1],
@@ -274,51 +315,65 @@ export class BodyModel {
   }
 }
 
-// 入力（性別・身長 cm・体重 kg・任意の周囲長 cm）から Anny のパラメータを決める。
-// Anny の weight は筋肉量が平均のときは効きが小さい（BMI で ±2 程度）ため、
-// BMI が性別ごとの標準から離れるほど muscle を下げて、太さの幅を広げる。
-// 周囲長を指定したときは muscle も未知数にする。muscle は 0.5 を境に効き方が折れ曲がるので、
+// 入力（性別・年齢・身長 cm・体重 kg・任意の筋肉量と周囲長 cm）から Anny のパラメータを決める。
+// 筋肉量（0〜1）を指定しないときは自動で決める: Anny の weight は筋肉量が平均のときは効きが小さい
+// （BMI で ±2 程度）ため、BMI が性別ごとの標準から離れるほど muscle を下げて、太さの幅を広げる。
+// 自動で周囲長を指定したときは muscle も未知数にする。muscle は 0.5 を境に効き方が折れ曲がるので、
 // 0〜0.5 と 0.5〜1 の区間ごとに解いて良い方を選ぶ。
+// 顔の肉付きは BMI に連動させる（Anny の weight は頭の形をほとんど変えないため）。
 // quick が真なら、周囲長の局所変形と muscle を前回の値のまま身長・体重だけ合わせる（スライダー操作中用）
+export const DEFAULT_AGE = 30;
+
 export function createShapeMapper(model) {
   const centerBmi = {};
   for (const [sex, gender] of Object.entries(GENDER)) {
-    const r = model.measure(model.blend({ gender, muscle: 0.5, height: 0.3, weight: 0.5 }));
+    const age = model.annyAge(DEFAULT_AGE);
+    const r = model.measure(model.blend({ gender, age, muscle: 0.5, height: 0.3, weight: 0.5 }));
     centerBmi[sex] = r.mass / (r.height * r.height);
   }
   let prev = null;
 
-  return function map({ sex, heightCm, weightKg, girthsCm = {} }, { quick = false } = {}) {
+  return function map({ sex, ageYears = DEFAULT_AGE, heightCm, weightKg, muscle = null, girthsCm = {} }, { quick = false } = {}) {
     const gender = GENDER[sex];
+    const age = model.annyAge(ageYears);
     const heightM = heightCm / 100;
     const bmi = weightKg / (heightM * heightM);
-    const off = Math.abs(bmi - centerBmi[sex]);
-    const defaultMuscle = 0.5 * Math.min(Math.max(1 - (off - 1) / 5, 0), 1);
+    const diff = bmi - centerBmi[sex];
+    const autoMuscle = 0.5 * Math.min(Math.max(1 - (Math.abs(diff) - 1) / 5, 0), 1);
+    const faceFat = Math.min(Math.max(diff / 10, -0.6), 1);
     const girthsM = {};
     for (const g of GIRTHS) if (Number.isFinite(girthsCm[g])) girthsM[g] = girthsCm[g] / 100;
     const hasGirths = Object.keys(girthsM).length > 0;
+    const manualMuscle = Number.isFinite(muscle);
     const start = prev && prev.gender === gender ? prev : null;
-    const base = { gender, heightM, massKg: weightKg, girthsM };
+    const base = { gender, age, faceFat, heightM, massKg: weightKg, girthsM };
 
     let fit;
-    if (!hasGirths) {
-      fit = model.fit({ ...base, muscle: defaultMuscle }, start);
+    if (manualMuscle) {
+      if (quick && start && hasGirths) {
+        const fixedLocal = Object.fromEntries(Object.keys(girthsM).map((g) => [g, start.local?.[g] ?? 0]));
+        fit = model.fit({ ...base, muscle, fitGirths: false, fixedLocal }, start);
+      } else {
+        fit = model.fit({ ...base, muscle }, start);
+      }
+    } else if (!hasGirths) {
+      fit = model.fit({ ...base, muscle: autoMuscle }, start);
     } else if (quick && start) {
       const fixedLocal = Object.fromEntries(Object.keys(girthsM).map((g) => [g, start.local?.[g] ?? 0]));
       fit = model.fit({ ...base, muscle: start.muscle, fitGirths: false, fixedLocal }, start);
     } else {
       fit = null;
       for (const range of [[0, 0.5], [0.5, 1]]) {
-        const s = { ...start, muscle: Math.min(Math.max(start?.muscle ?? defaultMuscle, range[0]), range[1]) };
+        const s = { ...start, muscle: Math.min(Math.max(start?.muscle ?? autoMuscle, range[0]), range[1]) };
         const f = model.fit({ ...base, muscleRange: range }, s);
         if (!fit || f.cost < fit.cost) fit = f;
       }
     }
     prev = fit;
-    const params = { gender, muscle: fit.muscle, height: fit.height, weight: fit.weight, local: fit.local };
+    const { measured, residuals, cost, ...params } = fit;
     // 残差は許容誤差で割ってあるので、1 を超えたら入力値に届いていない（Anny の範囲外）
-    const inRange = fit.residuals.every((v) => Math.abs(v) <= 1);
-    return { params, measured: fit.measured, inRange };
+    const inRange = residuals.every((v) => Math.abs(v) <= 1);
+    return { params, measured, inRange };
   };
 }
 
