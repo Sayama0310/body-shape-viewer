@@ -111,8 +111,9 @@ html, body {
   position: absolute;
   left: 16px;
   right: 16px;
-  /* シートの上端の少し上（--sheet-top は sheet.js が更新する） */
-  top: calc(var(--sheet-top, 100vh) - 52px);
+  /* シートの上端（隠しているときは「入力」ボタン）の少し上。2行になっても重ならないよう下端で合わせる
+     （--sheet-top は sheet.js が更新する。.viewer は画面全体なので 100% が画面の高さ） */
+  bottom: calc(100% - var(--sheet-top, 100%) + 8px);
   margin: 0;
   padding: 8px 12px;
   font-size: 13px;
@@ -790,4 +791,73 @@ input[type="range"]::-moz-range-thumb {
   font-size: 20px;
   font-weight: 600;
   color: var(--sub);
+}
+
+/* --- シートを隠す / 出す --- */
+.sheet {
+  transition: transform 320ms var(--ease);
+}
+
+.sheet.is-hidden {
+  transform: translateY(calc(100% + 32px));
+  box-shadow: none;
+}
+
+.sheet-open {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--overlay);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transform: translateX(-50%);
+  transition: opacity 200ms var(--ease);
+  touch-action: manipulation;
+}
+
+.sheet-open.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sheet-open svg,
+.sheet-close svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sheet-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--sub);
+  background: var(--field);
+  border: 0;
+  border-radius: 50%;
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    transition: none;
+  }
 }

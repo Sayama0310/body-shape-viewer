@@ -685,7 +685,7 @@ function setNumbersShown(shown) {
 }
 privacyToggle.addEventListener('click', () => setNumbersShown(!numbersShown));
 document.getElementById('sheet').addEventListener('snap', (e) => {
-  if (e.detail === 'collapsed') setNumbersShown(false);
+  if (e.detail === 'collapsed' || e.detail === 'hidden') setNumbersShown(false);
 });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') setNumbersShown(false);
@@ -885,11 +885,14 @@ initScene();
 // canvas は全画面のまま、シートより上に見えている領域（幅 w × 高さ visible）を1枚の画面として投影する。
 // シートを動かしても canvas の大きさは変えず、投影だけを毎フレーム連続的にずらす
 const sheetEl = document.getElementById('sheet');
+const sheetOpenEl = document.getElementById('sheet-open');
 let viewKey = '';
 function updateViewport() {
   const { clientWidth: w, clientHeight: h } = container;
   const top = container.getBoundingClientRect().top;
-  const visible = Math.min(Math.max(sheetEl.getBoundingClientRect().top - top, 120), h);
+  // 見える範囲の下端は、シートの上端か「入力」ボタン（シートを隠しているとき）の上端の高い方
+  const bottom = Math.min(sheetEl.getBoundingClientRect().top, sheetOpenEl.getBoundingClientRect().top - 8);
+  const visible = Math.min(Math.max(bottom - top, 120), h);
   // 上の視点ボタンの下から、シートの上までを見える範囲として体を収める（狭すぎるときはボタンの下も使う）
   const toolbar = Math.min(Math.max(viewsEl.getBoundingClientRect().bottom - top, 0), Math.max(visible - 240, 0));
   const key = `${w}x${h}x${visible.toFixed(1)}x${toolbar.toFixed(1)}`;

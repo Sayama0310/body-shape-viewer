@@ -2,12 +2,16 @@
 // - シートは「たたむ（要約だけ）/ 半分 / 全開」の3段階。つまみ部分のドラッグに追従し、離すと最寄りの段階へ収まる
 // - シートの上端は CSS 変数 --sheet-top に入れる（3D 表示のカメラは app.js が毎フレーム追従させる）
 // - 開閉の状態は端末内に保存する（表示の好みなので失われても困らない）
+// - シート自体は、ふだんは画面の外に隠しておき、「入力」ボタンで出す（身長・体重などを人に見られないように）。
+//   起動時は常に隠した状態から始める
 
 const sheet = document.getElementById('sheet');
 const grip = document.getElementById('sheet-grip');
 const toggle = document.getElementById('sheet-toggle');
 const body = document.getElementById('sheet-body');
 const groups = [...document.querySelectorAll('.group')];
+const openButton = document.getElementById('sheet-open');
+const closeButton = document.getElementById('sheet-close');
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const STORAGE_KEY = 'body-shape-viewer:ui';
 
@@ -55,9 +59,38 @@ function computeSnaps() {
 function setHeight(h) {
   height = h;
   sheet.style.height = `${h}px`;
-  document.documentElement.style.setProperty('--sheet-top', `${window.innerHeight - h}px`);
+  updateSheetTop();
   toggle.setAttribute('aria-expanded', String(h > snaps.collapsed + 8));
 }
+
+// シートの上端（隠しているときは「入力」ボタンの上端）を --sheet-top に入れる。範囲外の注記などがその上に出る
+function updateSheetTop() {
+  const top = hidden ? openButton.getBoundingClientRect().top : window.innerHeight - height;
+  document.documentElement.style.setProperty('--sheet-top', `${top}px`);
+}
+
+// --- 隠す / 出す ---
+let hidden = true;
+function setHidden(value) {
+  hidden = value;
+  sheet.classList.toggle('is-hidden', hidden);
+  sheet.inert = hidden; // 隠している間はフォーカスや読み上げの対象にしない
+  openButton.classList.toggle('is-hidden', !hidden);
+  openButton.inert = !hidden;
+  openButton.setAttribute('aria-expanded', String(!hidden));
+  updateSheetTop();
+  if (hidden) sheet.dispatchEvent(new CustomEvent('snap', { detail: 'hidden' })); // app.js が数値を隠す
+}
+
+openButton.addEventListener('click', () => {
+  setHidden(false);
+  // たたんだ状態で閉じていたら、半分まで開いて出す
+  if (currentSnap === 'collapsed') animateTo('half');
+});
+closeButton.addEventListener('click', () => {
+  setHidden(true);
+  openButton.focus({ preventScroll: true }); // 閉じるボタンは隠れるので、フォーカスを「入力」ボタンへ移す
+});
 
 function animateTo(name) {
   currentSnap = name;
@@ -90,7 +123,7 @@ function nearestSnap(h) {
 let drag = null;
 
 grip.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.people-tabs, .privacy-toggle')) return; // 人の切り替え・数値の表示のボタンはドラッグに使わない
+  if (e.target.closest('.people-tabs, .privacy-toggle, .sheet-close')) return; // 人の切り替えなどのボタンはドラッグに使わない
   cancelAnimationFrame(anim?.raf);
   anim = null;
   drag = { id: e.pointerId, y0: e.clientY, h0: height, moved: false, samples: [{ t: e.timeStamp, y: e.clientY }] };
@@ -166,3 +199,4 @@ for (const group of groups) {
 computeSnaps();
 currentSnap = ui.snap in snaps ? ui.snap : 'half';
 setHeight(snaps[currentSnap]);
+setHidden(true);
