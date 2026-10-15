@@ -3,16 +3,26 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // 試作ビューア: プリミティブを組み合わせた簡易人型。
 // 寸法は身長 170cm の体形を基準（メートル単位）にし、
-// 身長で縦方向の位置・長さを、BMI で胴・手足の太さを変える。
+// 身長で縦方向の位置・長さを、BMI で胴・手足の太さを、性別で各部の比率を変える。
 
 const BASE_HEIGHT = 1.70;
 const BASE_BMI = 22;
+const STORAGE_KEY = 'body-shape-viewer:input';
+
+// 性別ごとの体形の傾向（1 が基準）
+const PROFILES = {
+  male: { shoulder: 1.08, chest: 1.05, pelvis: 0.94, belly: 1.1, thigh: 1.0, arm: 1.05, bust: 0 },
+  female: { shoulder: 0.9, chest: 0.94, pelvis: 1.12, belly: 0.85, thigh: 1.08, arm: 0.9, bust: 1 },
+};
 
 const container = document.getElementById('viewer');
-const heightInput = document.getElementById('height');
-const weightInput = document.getElementById('weight');
-const heightOut = document.getElementById('height-out');
-const weightOut = document.getElementById('weight-out');
+const heightRange = document.getElementById('height');
+const weightRange = document.getElementById('weight');
+const heightNumber = document.getElementById('height-num');
+const weightNumber = document.getElementById('weight-num');
+const sexInputs = document.querySelectorAll('input[name="sex"]');
+const bmiOut = document.getElementById('bmi');
+const bmiClassOut = document.getElementById('bmi-class');
 
 // --- シーン ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -71,7 +81,7 @@ function clearFigure() {
   figure.clear();
 }
 
-function buildFigure(heightCm, weightKg) {
+function buildFigure(heightCm, weightKg, sex) {
   clearFigure();
 
   const h = heightCm / 100;
@@ -82,28 +92,37 @@ function buildFigure(heightCm, weightKg) {
   const trunkW = Math.pow(ratio, 0.8); // 胴は手足より太りやすくする
   const y = (v) => v * k;
   const v3 = (x, yy, z) => new THREE.Vector3(x, yy, z);
+  const p = PROFILES[sex];
 
   // 頭・首（太さは体重で変えない）
   addMesh(new THREE.SphereGeometry(0.105, 32, 24), v3(0, y(1.585), 0), v3(0.92, 1.12 * k, 1));
   limb(v3(0, y(1.36), 0), v3(0, y(1.52), 0), 0.05 * Math.pow(ratio, 0.3));
 
   // 胴（胸〜腹）と骨盤。前後方向は扁平にする
-  const chestR = 0.15 * trunkW;
+  const chestR = 0.15 * trunkW * p.chest;
   const torsoTop = y(1.40);
   const torsoBottom = y(0.98);
   const torso = new THREE.CapsuleGeometry(chestR, Math.max(torsoTop - torsoBottom - 2 * chestR, 0.01), 8, 24);
   addMesh(torso, v3(0, (torsoTop + torsoBottom) / 2, 0), v3(1, 1, 0.68));
 
   // 腹のふくらみ（BMI が高いほど前に出る）
-  const belly = 0.13 * Math.pow(ratio, 1.1);
+  const belly = 0.13 * Math.pow(ratio, 1.1) * p.belly;
   addMesh(new THREE.SphereGeometry(belly, 24, 16), v3(0, y(1.08), 0.02 + 0.03 * (ratio - 1)), v3(1.05, 1.0, 0.85));
 
-  const pelvisR = 0.14 * trunkW;
+  // 胸のふくらみ（女性のみ）
+  if (p.bust) {
+    const bustR = 0.06 * Math.pow(ratio, 0.6);
+    for (const s of [-1, 1]) {
+      addMesh(new THREE.SphereGeometry(bustR, 20, 14), v3(s * chestR * 0.42, y(1.27), chestR * 0.68 - bustR * 0.45));
+    }
+  }
+
+  const pelvisR = 0.14 * trunkW * p.pelvis;
   addMesh(new THREE.SphereGeometry(pelvisR, 24, 16), v3(0, y(0.92), 0), v3(1.05, 0.75, 0.75));
 
   // 脚
   const legX = Math.max(0.085, pelvisR * 0.6);
-  const thighR = 0.068 * limbW;
+  const thighR = 0.068 * limbW * p.thigh;
   const shinR = 0.048 * limbW;
   for (const s of [-1, 1]) {
     const hip = v3(s * legX, y(0.9), 0);
@@ -117,9 +136,9 @@ function buildFigure(heightCm, weightKg) {
   }
 
   // 腕（胴が太いほど肩の位置を外へ）
-  const upperArmR = 0.042 * limbW;
-  const foreArmR = 0.034 * limbW;
-  const shoulderX = chestR * 0.95 + upperArmR * 0.7;
+  const upperArmR = 0.042 * limbW * p.arm;
+  const foreArmR = 0.034 * limbW * p.arm;
+  const shoulderX = (chestR * 0.95 + upperArmR * 0.7) * p.shoulder;
   for (const s of [-1, 1]) {
     const shoulder = v3(s * shoulderX, y(1.39), 0);
     const elbow = v3(s * (shoulderX + 0.04 + 0.03 * (ratio - 1)), y(1.1), -0.01);
@@ -133,17 +152,112 @@ function buildFigure(heightCm, weightKg) {
 }
 
 // --- 入力 ---
-function update() {
-  const heightCm = Number(heightInput.value);
-  const weightKg = Number(weightInput.value);
-  heightOut.textContent = heightCm;
-  weightOut.textContent = weightKg;
-  buildFigure(heightCm, weightKg);
+// 値は state に持ち、スライダーと数値入力はどちらも state を更新する。
+const fields = [
+  { key: 'height', range: heightRange, number: heightNumber },
+  { key: 'weight', range: weightRange, number: weightNumber },
+];
+
+const state = { height: 170, weight: 65, sex: 'male' };
+
+function limits(field) {
+  return { min: Number(field.range.min), max: Number(field.range.max) };
 }
 
-heightInput.addEventListener('input', update);
-weightInput.addEventListener('input', update);
-update();
+function isValid(field, value) {
+  const { min, max } = limits(field);
+  return Number.isFinite(value) && value >= min && value <= max;
+}
+
+function round1(v) {
+  return Math.round(v * 10) / 10;
+}
+
+// 日本肥満学会の判定基準
+function bmiClass(bmi) {
+  if (bmi < 18.5) return '低体重';
+  if (bmi < 25) return '普通体重';
+  if (bmi < 30) return '肥満（1度）';
+  if (bmi < 35) return '肥満（2度）';
+  if (bmi < 40) return '肥満（3度）';
+  return '肥満（4度）';
+}
+
+function render({ syncNumbers = true } = {}) {
+  for (const f of fields) {
+    f.range.value = state[f.key];
+    if (syncNumbers) f.number.value = state[f.key];
+  }
+  for (const input of sexInputs) input.checked = input.value === state.sex;
+
+  const h = state.height / 100;
+  const bmi = state.weight / (h * h);
+  bmiOut.textContent = bmi.toFixed(1);
+  bmiClassOut.textContent = bmiClass(bmi);
+
+  buildFigure(state.height, state.weight, state.sex);
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // 保存できない環境（プライベートブラウズ等）では保存しない
+  }
+}
+
+function restore() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return;
+  }
+  if (!saved || typeof saved !== 'object') return;
+  for (const f of fields) {
+    const v = Number(saved[f.key]);
+    if (isValid(f, v)) state[f.key] = round1(v);
+  }
+  if (saved.sex in PROFILES) state.sex = saved.sex;
+}
+
+for (const f of fields) {
+  f.range.addEventListener('input', () => {
+    state[f.key] = Number(f.range.value);
+    render();
+    save();
+  });
+
+  // 入力途中（空欄や範囲外）は反映せず、確定時に範囲内へ丸める
+  f.number.addEventListener('input', () => {
+    const v = f.number.valueAsNumber;
+    if (!isValid(f, v)) return;
+    state[f.key] = round1(v);
+    render({ syncNumbers: false });
+    save();
+  });
+  f.number.addEventListener('change', () => {
+    const v = f.number.valueAsNumber;
+    if (Number.isFinite(v)) {
+      const { min, max } = limits(f);
+      state[f.key] = round1(THREE.MathUtils.clamp(v, min, max));
+      save();
+    }
+    render();
+  });
+}
+
+for (const input of sexInputs) {
+  input.addEventListener('change', () => {
+    if (!input.checked) return;
+    state.sex = input.value;
+    render();
+    save();
+  });
+}
+
+restore();
+render();
 
 // --- 描画 ---
 function resize() {
