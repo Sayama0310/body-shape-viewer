@@ -14,6 +14,15 @@
   --scene-bg: #e9e9ee;
   --floor: #dcdce3;
   --shadow-opacity: 0.22;
+  /* アニメーションの長さ（prefers-reduced-motion では 0 にする） */
+  --dur: 280ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -46,12 +55,9 @@ html, body {
 }
 
 .app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
-  /* 全画面起動時にノッチ・ステータスバーに重ならないようにする */
-  padding-top: env(safe-area-inset-top);
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }
 
 .update-banner {
@@ -70,10 +76,18 @@ html, body {
   background: var(--panel);
   border-radius: 12px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  /* 上から滑り込ませる */
+  transform: translateY(calc(-100% - 16px - env(safe-area-inset-top)));
+  opacity: 0;
+  visibility: hidden;
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease), visibility 0s var(--dur);
 }
 
-.update-banner[hidden] {
-  display: none;
+.update-banner.is-shown {
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
 }
 
 .update-banner button {
@@ -86,10 +100,10 @@ html, body {
   border-radius: 8px;
 }
 
+/* 3D 表示は全画面に置き、シートはその上に重ねる（canvas の大きさはシートの開閉で変えない） */
 .viewer {
-  flex: 1;
-  min-height: 0;
-  position: relative;
+  position: absolute;
+  inset: 0;
   touch-action: none;
 }
 
@@ -97,7 +111,8 @@ html, body {
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: 12px;
+  /* シートの上端の少し上（--sheet-top は sheet.js が更新する） */
+  top: calc(var(--sheet-top, 100vh) - 52px);
   margin: 0;
   padding: 8px 12px;
   font-size: 13px;
@@ -106,10 +121,12 @@ html, body {
   background: var(--overlay);
   border-radius: 10px;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
 }
 
-.viewer-status[hidden] {
-  display: none;
+.viewer-status.is-shown {
+  opacity: 1;
 }
 
 .viewer canvas {
@@ -118,20 +135,142 @@ html, body {
   height: 100%;
 }
 
-.controls {
-  margin: 0;
+/* --- ボトムシート --- */
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  /* 高さは sheet.js が指で動かす・アニメーションさせる */
+  height: 40vh;
   background: var(--panel);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  will-change: height;
+}
+
+.sheet-grip {
+  flex-shrink: 0;
+  padding: 8px 20px 4px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.sheet-handle {
+  width: 40px;
+  height: 5px;
+  margin: 0 auto 6px;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.sheet-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 0 8px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-summary-bmi {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--sub);
+  white-space: nowrap;
+}
+
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 20px calc(16px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --- グループ（高さをアニメーションさせて開閉する） --- */
+.group {
   border-top: 1px solid var(--line);
-  padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 0;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: 0;
+}
+
+.group-head::before {
+  content: "▸";
+  color: var(--sub);
+  transition: transform var(--dur) var(--ease);
+}
+
+.group-head[aria-expanded="true"]::before {
+  transform: rotate(90deg);
+}
+
+.group-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.group-summary {
+  flex: 1;
+  font-size: 12px;
+  color: var(--sub);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.group-head[aria-expanded="true"] .group-summary {
+  opacity: 0;
+}
+
+.group-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur) var(--ease);
+}
+
+.group.is-open .group-body {
+  grid-template-rows: 1fr;
+}
+
+.group-inner {
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  /* 周囲長の欄を開いても 3D 表示の場所を残す */
-  max-height: 55vh;
-  max-height: 55dvh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.group.is-open .group-inner {
+  opacity: 1;
+  padding-bottom: 14px;
 }
 
 .field {
@@ -250,49 +389,8 @@ input[type="range"] {
   accent-color: var(--accent);
 }
 
-.girths {
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-}
-
-.girths summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 15px;
-  color: var(--sub);
-  cursor: pointer;
-  list-style: none;
-}
-
-.girths summary::-webkit-details-marker {
-  display: none;
-}
-
-.girths summary::before {
-  content: "▸";
-  margin-right: -2px;
-  transition: transform 0.15s;
-}
-
-.girths[open] summary::before {
-  transform: rotate(90deg);
-}
-
-.girths summary > span:first-of-type {
-  flex: 1;
-  white-space: nowrap;
-}
-
-.girth-summary {
-  font-size: 12px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
 .girths .hint {
-  margin: 8px 0 4px;
+  margin: 0;
   font-size: 12px;
   color: var(--sub);
   line-height: 1.5;
@@ -303,7 +401,7 @@ input[type="range"] {
   grid-template-columns: 7.5em 1fr auto;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: -6px;
   font-size: 15px;
   color: var(--sub);
 }
@@ -327,8 +425,8 @@ input[type="range"] {
 /* --- 3D 表示の上のボタン --- */
 .views {
   position: absolute;
-  top: 10px;
-  right: 12px;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
   display: inline-flex;
   padding: 2px;
   background: var(--overlay);
@@ -354,8 +452,8 @@ input[type="range"] {
 
 .help-button {
   position: absolute;
-  top: 10px;
-  left: 12px;
+  top: calc(10px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
   width: 34px;
   height: 34px;
   padding: 0;
@@ -380,10 +478,25 @@ input[type="range"] {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
   font-size: 14px;
   line-height: 1.6;
+  /* 下から浮かび上がる。is-open は app.js が付け外しする */
+  opacity: 0;
+  transform: translateY(24px) scale(0.98);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.help.is-open {
+  opacity: 1;
+  transform: none;
 }
 
 .help::backdrop {
   background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.help.is-open::backdrop {
+  opacity: 1;
 }
 
 .help h2 {

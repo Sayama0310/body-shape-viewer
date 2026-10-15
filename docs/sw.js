@@ -7,7 +7,7 @@
 // VERSION と FILES は `node tools/update-sw.mjs` で更新する（手で書き換えない）。
 
 // <precache>
-const VERSION = '2d878f22ce';
+const VERSION = '2a69833b0b';
 const FILES = [
   './',
   'app.js',
@@ -25,6 +25,7 @@ const FILES = [
   'licenses/makehuman-mpfb2-CC0.md',
   'manifest.webmanifest',
   'pwa.js',
+  'sheet.js',
   'style.css',
   'vendor/three/LICENSE',
   'vendor/three/README.md',

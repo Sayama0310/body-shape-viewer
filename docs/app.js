@@ -175,11 +175,26 @@ for (const button of document.querySelectorAll('[data-view]')) {
 }
 
 // --- 使い方 ---
+// 開くときは表示してから is-open を付けてフェード・スライドさせ、閉じるときは逆にしてから閉じる
 const helpDialog = document.getElementById('help');
-document.getElementById('help-button').addEventListener('click', () => helpDialog.showModal());
-document.getElementById('help-close').addEventListener('click', () => helpDialog.close());
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+function openHelp() {
+  helpDialog.showModal();
+  requestAnimationFrame(() => helpDialog.classList.add('is-open'));
+}
+function closeHelp() {
+  helpDialog.classList.remove('is-open');
+  if (reduceMotion.matches) return helpDialog.close();
+  setTimeout(() => helpDialog.close(), 300);
+}
+document.getElementById('help-button').addEventListener('click', openHelp);
+document.getElementById('help-close').addEventListener('click', closeHelp);
 helpDialog.addEventListener('click', (e) => {
-  if (e.target === helpDialog) helpDialog.close(); // 外側を押したら閉じる
+  if (e.target === helpDialog) closeHelp(); // 外側を押したら閉じる
+});
+helpDialog.addEventListener('cancel', (e) => {
+  e.preventDefault(); // Esc でもアニメーションして閉じる
+  closeHelp();
 });
 
 // --- 体形 ---
@@ -187,8 +202,9 @@ const material = new THREE.MeshStandardMaterial({ color: 0xd8a585, roughness: 0.
 let body = null; // { model, mapShape, mesh, positions }
 
 function showStatus(text) {
-  statusEl.textContent = text;
-  statusEl.hidden = !text;
+  if (text) statusEl.textContent = text; // 消すときは文字を残したままフェードアウトさせる
+  statusEl.classList.toggle('is-shown', Boolean(text));
+  statusEl.setAttribute('aria-hidden', String(!text));
 }
 
 async function initBody() {
@@ -276,6 +292,7 @@ const muscleFieldEl = document.getElementById('muscle-field');
 let autoMuscle = 50;
 function showAutoMuscle(value) {
   autoMuscle = value;
+  updateSummaries();
   muscleField.range.value = value;
   if (document.activeElement !== muscleField.number) muscleField.number.value = value;
 }
@@ -331,8 +348,22 @@ function render({ syncNumbers = true, quick = false } = {}) {
   const bmi = state.weight / (h * h);
   bmiOut.textContent = bmi.toFixed(1);
   bmiClassOut.textContent = bmiClass(bmi);
+  updateSummaries();
 
   scheduleBodyUpdate({ quick });
+}
+
+// たたんだシートとグループの見出しに出す要約
+const SEX_LABELS = { male: '男性', female: '女性' };
+function updateSummaries() {
+  const h = state.height / 100;
+  const bmi = state.weight / (h * h);
+  const basic = `${SEX_LABELS[state.sex]} · ${state.height} cm · ${state.weight} kg`;
+  document.getElementById('sheet-summary-text').textContent = basic;
+  document.getElementById('sheet-summary-bmi').textContent = `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}`;
+  document.getElementById('basic-summary').textContent = basic;
+  const muscle = state.muscle == null ? `自動 ${autoMuscle}` : state.muscle;
+  document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle}`;
 }
 
 function save() {
@@ -431,22 +462,38 @@ for (const input of sexInputs) {
 
 restore();
 // 周囲長を入力済みなら、その欄を開いた状態で始める
-if (girthFields.some((f) => state[f.key] != null)) document.getElementById('girths').open = true;
+if (girthFields.some((f) => state[f.key] != null)) document.getElementById('girths').dataset.open = 'true';
 render();
 initBody();
 
 // --- 描画 ---
+// canvas は全画面のまま、シートより上に見えている領域（幅 w × 高さ visible）を1枚の画面として投影する。
+// シートを動かしても canvas の大きさは変えず、投影だけを毎フレーム連続的にずらす
+const sheetEl = document.getElementById('sheet');
+let viewKey = '';
+function updateViewport() {
+  const { clientWidth: w, clientHeight: h } = container;
+  const visible = Math.min(Math.max(sheetEl.getBoundingClientRect().top - container.getBoundingClientRect().top, 120), h);
+  const key = `${w}x${h}x${visible.toFixed(1)}`;
+  if (key === viewKey) return;
+  viewKey = key;
+  camera.aspect = w / visible;
+  camera.setViewOffset(w, visible, 0, 0, w, h);
+  camera.updateProjectionMatrix();
+}
+
 function resize() {
   const { clientWidth: w, clientHeight: h } = container;
   renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+  viewKey = '';
+  updateViewport();
 }
 
 new ResizeObserver(resize).observe(container);
 resize();
 
 renderer.setAnimationLoop((now) => {
+  updateViewport();
   stepTween(now);
   controls.update();
   renderer.render(scene, camera);
