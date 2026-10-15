@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Body Shape Viewer</title>
-  <meta name="theme-color" content="#f2f2f5">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f2f2f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -29,6 +31,12 @@
   </div>
   <main class="app">
     <div id="viewer" class="viewer">
+      <button type="button" id="help-button" class="icon-button help-button" aria-label="使い方">?</button>
+      <div class="views" role="group" aria-label="視点">
+        <button type="button" data-view="front">正面</button>
+        <button type="button" data-view="side">横</button>
+        <button type="button" data-view="back">後ろ</button>
+      </div>
       <p id="viewer-status" class="viewer-status" role="status" hidden></p>
     </div>
     <form class="controls" id="controls" onsubmit="return false">
@@ -77,6 +85,20 @@
       </details>
     </form>
   </main>
+  <dialog id="help" class="help">
+    <h2>使い方</h2>
+    <ul>
+      <li>身長・体重はスライダーか数値で入力します。性別で体形の傾向が変わります。</li>
+      <li>「周囲長（任意）」を開いて胸囲・ウエスト・ヒップを入れると、体形がその値に近づきます。空欄ならモデルの値を表示します。</li>
+      <li>3D表示は1本指で回転、2本指でピンチすると拡大・縮小します。右上のボタンで正面・横・後ろに切り替えられます。</li>
+      <li>モデルで表せない組み合わせのときは、近い体形を表示して画面下に注記を出します。</li>
+    </ul>
+    <h2>データの扱い</h2>
+    <p>入力した値はこの端末の中だけで計算・保存し、外部には送信しません。ホーム画面に追加するとオフラインでも使えます。</p>
+    <h2>クレジット</h2>
+    <p>体形モデル: <a href="https://github.com/naver/anny" target="_blank" rel="noopener">Anny</a>（NAVER LABS Europe, Apache License 2.0）／ MakeHuman アセット（CC0）／ <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a>（MIT）。<a href="licenses/README.md" target="_blank">ライセンスの詳細</a></p>
+    <button type="button" id="help-close" class="help-close">閉じる</button>
+  </dialog>
   <script type="module" src="app.js"></script>
   <script type="module" src="pwa.js"></script>
 </body>
