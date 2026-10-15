@@ -2,7 +2,7 @@
 // パラメータに応じて角の頂点と局所変形を重み付き合成する。
 
 const DATA_URL = new URL('./data/anny-body.json', import.meta.url);
-const FORMAT_VERSION = 6;
+const FORMAT_VERSION = 7;
 
 // 体重の換算に使う密度（Anny の anthropometry.py と同じ値）
 export const BODY_DENSITY = 980; // kg/m³
@@ -56,10 +56,12 @@ function view(buffer, block, Type) {
   return new Type(buffer, block.offset, block.byteLength / Type.BYTES_PER_ELEMENT);
 }
 
-// 体重（Anny の weight）だけは、アンカーの範囲（0〜1）の外へ延長してよい範囲。
-// MakeHuman の「最大体重」でも BMI 30 前後までしか届かないため（Anny に忠実でない拡張）。
-// 範囲外の分は、筋肉量によらず「筋肉量が最小のときの体重方向の変形」（脂肪がつく・落ちる方向）を延長する
-export const WEIGHT_RANGE = [-0.25, 2];
+// 体重（Anny の weight）だけは、アンカーの範囲（0〜1）の外へ延長してよい範囲（Anny に忠実でない拡張）。
+// MakeHuman の「最大体重」でも女性は BMI 30 前後までしか届かないため。
+// 太る側は「男性・筋肉量が最小のときの体重方向の変形」を延長する（女性の同じ方向を延長すると、
+// 胸・お腹が垂れ下がって折れ込み、股が三角に開く）。やせる側はその筋肉量での体重方向の変形を延長する。
+// この範囲より先は形が崩れる（太る側は脂肪が折れ込み、やせる側は腰の横がくびれる）ので、近い体形で止める
+export const WEIGHT_RANGE = [-0.15, 1.5];
 
 // アンカー列 anchors に対する値 x の補間重み [{index, weight}]（範囲外は端に丸める）
 function anchorWeights(anchors, x) {
@@ -176,11 +178,12 @@ export class BodyModel {
     const inside = Math.min(Math.max(weight, 0), 1);
     const list = this.anchorCombination({ ...params, weight: inside });
     if (weight !== inside) {
-      // 範囲外の分: 筋肉量 0 の角で、体重の端の区間の差（端 − 中央）を延長量だけ足す
+      // 範囲外の分: 体重の端の区間の差（端 − 中央）を延長量だけ足す（WEIGHT_RANGE の説明を参照）
       const edge = weight > 1 ? 1 : 0;
+      const dir = weight > 1 ? { ...params, gender: 0, muscle: 0 } : params;
       const k = Math.abs(weight - inside) / 0.5;
-      for (const e of this.anchorCombination({ ...params, muscle: 0, weight: edge })) list.push({ ...e, weight: e.weight * k });
-      for (const e of this.anchorCombination({ ...params, muscle: 0, weight: 0.5 })) list.push({ ...e, weight: -e.weight * k });
+      for (const e of this.anchorCombination({ ...dir, weight: edge })) list.push({ ...e, weight: e.weight * k });
+      for (const e of this.anchorCombination({ ...dir, weight: 0.5 })) list.push({ ...e, weight: -e.weight * k });
     }
     return list;
   }
@@ -294,14 +297,15 @@ export class BodyModel {
       local: { ...fixedLocal, ...Object.fromEntries(targets.map((g, i) => [g, x[localAt + i]])) },
     });
     // 残差を許容誤差で割って揃える（身長 5mm, 体重 0.5kg, 周囲長 5mm）。
-    // 全部は合わせられないときに身長・体重を優先するよう、その2つは重みを大きくする
-    const PRIORITY = 10;
+    // 全部は合わせられないときは、身長 > 体重 > 周囲長 の順に優先するよう重みを付ける
+    // （体重が範囲の端に届いたときに、身長を伸ばして体重を稼がないように）
+    const PRIORITY = [200, 10];
     const residuals = (m) => [
-      ((m.height - heightM) / 0.005) * PRIORITY,
-      ((m.mass - massKg) / 0.5) * PRIORITY,
+      ((m.height - heightM) / 0.005) * PRIORITY[0],
+      ((m.mass - massKg) / 0.5) * PRIORITY[1],
       ...targets.map((g) => (m.girths[g] - girthsM[g]) / 0.005),
     ];
-    const scaleBack = (res) => res.map((v, i) => (i < 2 ? v / PRIORITY : v));
+    const scaleBack = (res) => res.map((v, i) => (i < 2 ? v / PRIORITY[i] : v));
     const evalAt = (x) => this.measure(this.blend(toParams(x), scratch));
     const clampX = (x) => x.map((v, i) => Math.min(Math.max(v, lower[i]), upper[i]));
     const cost = (r) => r.reduce((s, v) => s + v * v, 0);
@@ -452,6 +456,15 @@ export function createShapeMapper(model) {
         const f = model.fit({ ...base, muscleRange: range }, s);
         if (!fit || f.cost < fit.cost) fit = f;
       }
+    }
+    // 身長がモデルの範囲外で届かないときは、届いた身長を目標にして体重を合わせ直す
+    // （身長を優先しているので、そのままだと身長をわずかでも近づけるために体重を犠牲にする）
+    // （体重を変えると届く身長も少し変わるので、数回繰り返す）
+    const heightResidual = fit.residuals[0];
+    for (let i = 0; i < 4 && Math.abs(fit.residuals[0]) > 1; i++) {
+      const again = model.fit({ ...base, heightM: fit.measured.height, muscle: fit.muscle ?? autoMuscle }, fit);
+      fit = { ...again, residuals: [heightResidual, ...again.residuals.slice(1)] };
+      if (Math.abs(again.residuals[0]) <= 1) break;
     }
     prev = fit;
     const { measured, residuals, cost, ...params } = fit;

@@ -1,5 +1,5 @@
 {
-  "formatVersion": 6,
+  "formatVersion": 7,
   "source": "anny 0.6.1 (topology=anny, rig=anny)",
   "vertexCount": 13718,
   "faceCount": 27420,
@@ -119,7 +119,7 @@
           ]
         }
       },
-      "deltaScale": 1.2155050152892564e-05,
+      "deltaScale": 1.2162394264367153e-05,
       "ageDeltaScale": 0.00195846592284346
     }
   },
