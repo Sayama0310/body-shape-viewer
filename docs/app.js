@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { loadBodyModel, createShapeMapper, GIRTHS } from './body-model.js';
+import { loadBodyModel, createShapeMapper, GIRTHS, DEFAULT_AGE } from './body-model.js';
 
 // Anny のメッシュを身長・体重・性別に合わせて合成して表示する。
 
@@ -204,8 +204,19 @@ function updateBody({ quick = false } = {}) {
   if (!body) return;
   const { model, mapShape, mesh, positions } = body;
   const girthsCm = Object.fromEntries(GIRTHS.map((g) => [g, state[g] ?? NaN]));
-  const shape = mapShape({ sex: state.sex, heightCm: state.height, weightKg: state.weight, girthsCm }, { quick });
+  const shape = mapShape(
+    {
+      sex: state.sex,
+      ageYears: state.age,
+      heightCm: state.height,
+      weightKg: state.weight,
+      muscle: state.muscle == null ? null : state.muscle / 100,
+      girthsCm,
+    },
+    { quick },
+  );
   model.blend(shape.params, positions.array);
+  if (state.muscle == null) showAutoMuscle(Math.round(shape.params.muscle * 100));
   const { minY, girths, height } = model.measure(positions.array);
   showGirths(girths);
   setBodyHeight(height);
@@ -243,12 +254,34 @@ function scheduleBodyUpdate({ quick = false } = {}) {
 const fields = [
   { key: 'height', range: heightRange, number: heightNumber },
   { key: 'weight', range: weightRange, number: weightNumber },
+  { key: 'age', range: document.getElementById('age'), number: document.getElementById('age-num') },
+  { key: 'muscle', range: document.getElementById('muscle'), number: document.getElementById('muscle-num') },
 ];
+const muscleField = fields[3];
+const muscleAuto = document.getElementById('muscle-auto');
+const muscleFieldEl = document.getElementById('muscle-field');
+
+// 筋肉量が自動のときは、自動で決めた値をスライダーと数値に表示する
+let autoMuscle = 50;
+function showAutoMuscle(value) {
+  autoMuscle = value;
+  muscleField.range.value = value;
+  if (document.activeElement !== muscleField.number) muscleField.number.value = value;
+}
 
 const girthFields = GIRTHS.map((key) => ({ key, number: document.getElementById(`${key}-num`) }));
 
-// 周囲長は未入力なら null
-const state = { height: 170, weight: 65, sex: 'male', chest: null, waist: null, hip: null };
+// 筋肉量（0〜100）は自動なら null、周囲長は未入力なら null
+const state = {
+  height: 170,
+  weight: 65,
+  age: DEFAULT_AGE,
+  muscle: null,
+  sex: 'male',
+  chest: null,
+  waist: null,
+  hip: null,
+};
 
 function limits(field) {
   const el = field.range ?? field.number;
@@ -276,9 +309,12 @@ function bmiClass(bmi) {
 
 function render({ syncNumbers = true, quick = false } = {}) {
   for (const f of fields) {
-    f.range.value = state[f.key];
-    if (syncNumbers) f.number.value = state[f.key];
+    const value = state[f.key] ?? autoMuscle; // null になるのは筋肉量（自動）だけ
+    f.range.value = value;
+    if (syncNumbers) f.number.value = value;
   }
+  muscleAuto.checked = state.muscle == null;
+  muscleFieldEl.classList.toggle('is-auto', state.muscle == null);
   if (syncNumbers) for (const f of girthFields) f.number.value = state[f.key] ?? '';
   for (const input of sexInputs) input.checked = input.value === state.sex;
 
@@ -308,7 +344,7 @@ function restore() {
   if (!saved || typeof saved !== 'object') return;
   for (const f of fields) {
     const v = Number(saved[f.key]);
-    if (isValid(f, v)) state[f.key] = round1(v);
+    if (saved[f.key] != null && isValid(f, v)) state[f.key] = round1(v);
   }
   if (SEXES.includes(saved.sex)) state.sex = saved.sex;
   for (const f of girthFields) {
@@ -367,6 +403,13 @@ for (const f of girthFields) {
     render();
   });
 }
+
+// 自動にすると筋肉量の指定を外す。外すと今の自動の値から手動で調整できる
+muscleAuto.addEventListener('change', () => {
+  state.muscle = muscleAuto.checked ? null : autoMuscle;
+  render();
+  save();
+});
 
 for (const input of sexInputs) {
   input.addEventListener('change', () => {

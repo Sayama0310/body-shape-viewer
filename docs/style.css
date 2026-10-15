@@ -420,3 +420,31 @@ input[type="range"] {
   border: 0;
   border-radius: 10px;
 }
+
+.field .hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  font-size: 14px;
+  color: var(--sub);
+}
+
+.auto-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* 自動で決めた値を表示しているとき */
+.field.is-auto input[type="range"],
+.field.is-auto .num input[type="number"] {
+  opacity: 0.55;
+}
