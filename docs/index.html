@@ -104,6 +104,21 @@
             </div>
           </div></div>
         </section>
+        <section class="group" data-group="outfit">
+          <button type="button" class="group-head" aria-expanded="false">
+            <span class="group-title">服装</span>
+            <span class="group-summary" id="outfit-summary"></span>
+          </button>
+          <div class="group-body"><div class="group-inner">
+            <label class="select-row">上
+              <select id="outfit-top"><option value="">なし</option></select>
+            </label>
+            <label class="select-row">下
+              <select id="outfit-bottom"><option value="">なし</option></select>
+            </label>
+            <p class="hint">服は体形に合わせて変形します（試作）。</p>
+          </div></div>
+        </section>
         <section class="group girths" data-group="girths" id="girths">
           <button type="button" class="group-head" aria-expanded="false">
             <span class="group-title">周囲長（任意）</span>
@@ -167,7 +182,7 @@
     <h2>データの扱い</h2>
     <p>入力した値はこの端末の中だけで計算・保存し、外部には送信しません。ホーム画面に追加するとオフラインでも使えます。</p>
     <h2>クレジット</h2>
-    <p>体形モデル: <a href="https://github.com/naver/anny" target="_blank" rel="noopener">Anny</a>（NAVER LABS Europe, Apache License 2.0）／ MakeHuman アセット（CC0）／ <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a>（MIT）。<a href="licenses/README.md" target="_blank">ライセンスの詳細</a></p>
+    <p>体形モデル: <a href="https://github.com/naver/anny" target="_blank" rel="noopener">Anny</a>（NAVER LABS Europe, Apache License 2.0）／ MakeHuman アセット（CC0）／ 服: Mindfront（CC BY 4.0）・punkduck（CC BY 3.0）・wolgade（CC0）／ <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a>（MIT）。<a href="licenses/README.md" target="_blank">ライセンスの詳細</a></p>
     <button type="button" id="help-close" class="help-close">閉じる</button>
   </dialog>
   <script type="module" src="app.js"></script>

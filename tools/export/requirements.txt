@@ -3,3 +3,7 @@ anny==0.6.1
 torch>=2.0
 numpy
 roma
+# export_assets.py（服・髪）で使う
+trimesh
+rtree
+pillow

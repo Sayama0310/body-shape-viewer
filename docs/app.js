@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadBodyModel, createShapeMapper, GIRTHS, DEFAULT_AGE } from './body-model.js';
+import { loadAssetCatalog, Attachment, visibleBodyIndex } from './attachments.js';
 
 // Anny のメッシュを身長・体重・性別に合わせて合成して表示する。
 
@@ -217,13 +218,80 @@ async function initBody() {
     geometry.setIndex(new THREE.BufferAttribute(model.index, 1));
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
-    scene.add(mesh);
-    body = { model, mapShape: createShapeMapper(model), mesh, positions };
+    // 体と、体に追従するアセット（服・髪）をまとめて接地させる
+    const figure = new THREE.Group();
+    figure.add(mesh);
+    scene.add(figure);
+    const fullIndex = geometry.index;
+    body = { model, mapShape: createShapeMapper(model), mesh, positions, figure, fullIndex, visibleIndex: fullIndex };
     updateBody();
   } catch (err) {
     console.error(err);
     showStatus('体形データを読み込めませんでした。再読み込みしてください。');
+    return;
   }
+  initWardrobe();
+}
+
+// --- 服装（体に追従するアセット） ---
+// 選択肢は data/assets/index.json から作る。アセット本体は選ばれたときに読み込む
+const SLOTS = ['top', 'bottom'];
+const slotSelects = Object.fromEntries(SLOTS.map((slot) => [slot, document.getElementById(`outfit-${slot}`)]));
+let catalog = [];
+const loadedAssets = new Map(); // id -> Promise<Attachment>
+let worn = []; // 表示中の Attachment
+
+async function initWardrobe() {
+  try {
+    catalog = await loadAssetCatalog();
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  for (const slot of SLOTS) {
+    const select = slotSelects[slot];
+    for (const a of catalog.filter((x) => x.slot === slot)) select.add(new Option(a.label, a.id));
+    if (!catalog.some((a) => a.id === state[slot])) state[slot] = null;
+    select.value = state[slot] ?? '';
+    select.addEventListener('change', () => {
+      state[slot] = select.value || null;
+      save();
+      updateSummaries();
+      applyOutfit();
+    });
+  }
+  updateSummaries();
+  applyOutfit();
+}
+
+function loadAsset(id) {
+  if (!loadedAssets.has(id)) {
+    loadedAssets.set(id, Attachment.load(catalog.find((a) => a.id === id)));
+  }
+  return loadedAssets.get(id);
+}
+
+let outfitRequest = 0;
+async function applyOutfit() {
+  if (!body) return;
+  const request = ++outfitRequest;
+  const ids = SLOTS.map((slot) => state[slot]).filter(Boolean);
+  let next;
+  try {
+    next = await Promise.all(ids.map(loadAsset));
+  } catch (err) {
+    console.error(err);
+    showStatus('服のデータを読み込めませんでした');
+    return;
+  }
+  if (request !== outfitRequest) return; // 読み込み中に選び直された
+  for (const a of worn) if (!next.includes(a)) body.figure.remove(a.mesh);
+  for (const a of next) if (!worn.includes(a)) body.figure.add(a.mesh);
+  worn = next;
+  // 服の下に隠れる体の三角形を描かない（法線は updateBody で全部の三角形から計算する）
+  body.visibleIndex = new THREE.BufferAttribute(visibleBodyIndex(body.model.index, worn), 1);
+  body.mesh.geometry.setIndex(body.visibleIndex);
+  for (const a of worn) a.update(body.positions.array);
 }
 
 // quick: スライダー操作中。周囲長の調整は前回のまま身長・体重だけ合わせる（指を離したら全体を合わせ直す）
@@ -247,10 +315,14 @@ function updateBody({ quick = false } = {}) {
   const { minY, girths, height } = model.measure(positions.array);
   showGirths(girths);
   setBodyHeight(height);
-  mesh.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
+  body.figure.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
   positions.needsUpdate = true;
+  // 法線は隠した三角形も含めて計算する（服を脱いだときに隠れていた部分の法線が古くならないように）
+  mesh.geometry.setIndex(body.fullIndex);
   mesh.geometry.computeVertexNormals();
+  mesh.geometry.setIndex(body.visibleIndex);
   mesh.geometry.computeBoundingSphere();
+  for (const a of worn) a.update(positions.array);
   showStatus(shape.inRange ? '' : 'モデルで表せる範囲を超えているため、近い体形を表示しています');
 }
 
@@ -307,6 +379,9 @@ const state = {
   muscle: null,
   sex: 'male',
   ...Object.fromEntries(GIRTHS.map((g) => [g, null])),
+  // 服装（アセットの id、なしなら null）
+  top: null,
+  bottom: null,
 };
 
 function limits(field) {
@@ -364,6 +439,9 @@ function updateSummaries() {
   document.getElementById('basic-summary').textContent = basic;
   const muscle = state.muscle == null ? `自動 ${autoMuscle}` : state.muscle;
   document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle}`;
+  const label = (id) => catalog.find((a) => a.id === id)?.label;
+  const outfit = SLOTS.map((slot) => label(state[slot])).filter(Boolean);
+  document.getElementById('outfit-summary').textContent = outfit.length ? outfit.join(' · ') : 'なし';
 }
 
 function save() {
@@ -387,6 +465,8 @@ function restore() {
     if (saved[f.key] != null && isValid(f, v)) state[f.key] = round1(v);
   }
   if (SEXES.includes(saved.sex)) state.sex = saved.sex;
+  // 服装は一覧を読み込んだ後に、存在する id か確かめる
+  for (const slot of ['top', 'bottom']) if (typeof saved[slot] === 'string') state[slot] = saved[slot];
   for (const f of girthFields) {
     const v = Number(saved[f.key]);
     if (saved[f.key] != null && isValid(f, v)) state[f.key] = round1(v);

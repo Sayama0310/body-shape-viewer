@@ -7,14 +7,25 @@
 // VERSION と FILES は `node tools/update-sw.mjs` で更新する（手で書き換えない）。
 
 // <precache>
-const VERSION = '2a69833b0b';
+const VERSION = '903feaed4d';
 const FILES = [
   './',
   'app.js',
+  'attachments.js',
   'body-model.js',
   'data/README.md',
   'data/anny-body.bin',
   'data/anny-body.json',
+  'data/assets/README.md',
+  'data/assets/index.json',
+  'data/assets/short_jeans.bin',
+  'data/assets/short_jeans.png',
+  'data/assets/shorts.bin',
+  'data/assets/shorts.png',
+  'data/assets/tank_top.bin',
+  'data/assets/tank_top.png',
+  'data/assets/top.bin',
+  'data/assets/top.png',
   'icons/apple-touch-icon.png',
   'icons/icon-192.png',
   'icons/icon-512.png',

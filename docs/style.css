@@ -561,3 +561,23 @@ input[type="range"] {
 .field.is-auto .num input[type="number"] {
   opacity: 0.55;
 }
+
+.select-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--sub);
+}
+
+.select-row select {
+  min-width: 11em;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
