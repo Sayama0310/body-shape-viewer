@@ -32,6 +32,25 @@ html, body {
   touch-action: none;
 }
 
+.viewer-status {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.viewer-status[hidden] {
+  display: none;
+}
+
 .viewer canvas {
   display: block;
   width: 100%;
