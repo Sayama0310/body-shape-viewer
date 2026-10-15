@@ -1,5 +1,5 @@
 {
-  "formatVersion": 5,
+  "formatVersion": 6,
   "source": "anny 0.6.1 (topology=anny, rig=anny)",
   "vertexCount": 13718,
   "faceCount": 27420,
@@ -119,7 +119,7 @@
           ]
         }
       },
-      "deltaScale": 1.2142751212525267e-05,
+      "deltaScale": 1.2155050152892564e-05,
       "ageDeltaScale": 0.00195846592284346
     },
     "african": {
@@ -161,7 +161,7 @@
           ]
         }
       },
-      "deltaScale": 1.233226665991466e-05,
+      "deltaScale": 1.2344315307208918e-05,
       "ageDeltaScale": 0.001960091692403609
     },
     "asian": {
@@ -203,7 +203,7 @@
           ]
         }
       },
-      "deltaScale": 1.1889909550837771e-05,
+      "deltaScale": 1.1899982035656569e-05,
       "ageDeltaScale": 0.002117364397644366
     },
     "caucasian": {
@@ -245,7 +245,7 @@
           ]
         }
       },
-      "deltaScale": 1.222811011826027e-05,
+      "deltaScale": 1.2241184625635293e-05,
       "ageDeltaScale": 0.0019619836548167213
     }
   },

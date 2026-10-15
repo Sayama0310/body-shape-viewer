@@ -25,7 +25,7 @@ import torch
 import anny
 from anny.anthropometry import BASE_MESH_WAIST_VERTICES
 
-FORMAT_VERSION = 5
+FORMAT_VERSION = 6
 
 # 書き出す次元とアンカー値（Anny のフェノタイプ値, 0〜1）。順序がバイナリ内の角の並び順になる
 DIMS = {
@@ -228,6 +228,30 @@ def measurement_sections(model, vertices_for, local_full):
     return result
 
 
+def linearize_average_muscle_weight(corners):
+    """筋肉量が平均（muscle = 0.5）の角のうち、体重が最小・最大のものを作り直す（Anny に忠実でない補正）。
+
+    MPFB2 のターゲットでは「平均の筋肉量 × 最大（最小）体重」の変形がとても小さく（最大 2cm 程度）、
+    筋肉量が中くらいのときだけ体重がほとんど効かない。そこで、その角の体重方向の変形を
+    筋肉量が最小のときの体重方向の変形（脂肪がつく・落ちる方向）で置き換える:
+
+        C(m=0.5, w) = C(m=0.5, w=0.5) + [C(m=0, w) − C(m=0, w=0.5)]
+
+    （筋肉量が最大のときの変形は筋肉ごと膨らむ形で、混ぜると肩・腕が不自然に盛り上がるため使わない）
+    """
+    out = corners.copy()
+    n_m, n_w, n_h = len(DIMS["muscle"]), len(DIMS["weight"]), len(DIMS["height"])
+
+    def c(g, m, w, h):
+        return ((g * n_m + m) * n_w + w) * n_h + h
+
+    for g in range(len(DIMS["gender"])):
+        for h in range(n_h):
+            for w in (0, 2):  # 体重 最小 / 最大
+                out[c(g, 1, w, h)] = corners[c(g, 1, 1, h)] + (corners[c(g, 0, w, h)] - corners[c(g, 0, 1, h)])
+    return out
+
+
 def interpolate(corners, values):
     """角の頂点を多重線形補間する（JS 側と同じ計算）。values は DIMS の順の値。"""
     per_dim = []
@@ -300,7 +324,9 @@ def main():
     shapes = {}
     for variant, spec in VARIANTS.items():
         corners_by_age = [
-            np.stack([vertices_for({**FIXED, **spec["race"], "age": age, **dict(zip(DIMS, c))}) for c in combos])
+            linearize_average_muscle_weight(
+                np.stack([vertices_for({**FIXED, **spec["race"], "age": age, **dict(zip(DIMS, c))}) for c in combos])
+            )
             for age in AGE_ANCHORS
         ]
         corners = corners_by_age[0]
@@ -406,11 +432,13 @@ def main():
             f"(local change -1..+1: {lo * 100:.1f}..{hi * 100:.1f} cm, {local_ranges[name]['count']} moving vertices)"
         )
 
-    # 補間が Anny 本体の出力にどれだけ近いか（姿勢の回転が体形に依存するぶん厳密には一致しない）
+    # 補間が Anny 本体の出力にどれだけ近いか（姿勢の回転が体形に依存するぶん厳密には一致しない）。
+    # 筋肉量が平均の角は補正しているので、比べるのは muscle = 0 / 1 の場合だけ
     rng = np.random.default_rng(0)
     errors = []
     for _ in range(args.verify):
         values = rng.random(len(DIMS))
+        values[list(DIMS).index("muscle")] = rng.integers(0, 2)
         age = years_to_anny_age(rng.uniform(20, 80), ages)
         t = (age - AGE_ANCHORS[0]) / (AGE_ANCHORS[1] - AGE_ANCHORS[0])
         approx = (1 - t) * interpolate(corners_by_age[0], values) + t * interpolate(corners_by_age[1], values)

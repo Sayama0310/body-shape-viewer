@@ -12,7 +12,8 @@
 アプリは共通部分と、選ばれた傾向の形状ファイルだけを読む。Service Worker は `standard` だけを最初にキャッシュし、
 ほかは選ばれて取得したときにキャッシュに入れる。
 
-`formatVersion` は 5。
+`formatVersion` は 6。
+- 5 からの変更: 筋肉量が平均（`muscle = 0.5`）の角のうち体重が最小・最大のものを補正した（下の「Anny からの補正」）。ファイルの形式は同じ
 - 4 からの変更: 形状（`mean`, `deltas`, `ageDeltas`）を体格の傾向ごとのファイル `anny-shape-<傾向>.bin` に分けた。
   配置とスケールは `shapes.<傾向>.layout` / `deltaScale` / `ageDeltaScale`（以前の `deltaScale`, `age.deltaScale` はここへ移った）
 - 3 からの変更: 周囲長を8項目に増やした。局所変形を疎な形式（`localIndex` + `localDeltas`、`localChanges[k].start` / `count`）にし、
@@ -39,6 +40,17 @@ Anny の定義（`shape_calibration` の `morphological_age_mapping`、`age.year
 
 `weight` や `height` は Anny の内部パラメータで、kg や cm ではない。
 実際の身長は頂点の Y 方向の幅から、体重はメッシュの体積 × 密度から求める（Anny の `anthropometry.py` は密度 980 kg/m³ を使っている）。
+
+### Anny からの補正（体重の効き）
+
+MPFB2 のターゲットでは「平均の筋肉量 × 最大（最小）体重」の変形がとても小さく（最大 2cm 程度）、Anny そのままだと
+筋肉量が中くらいのときに体重がほとんど効かない（女性 160cm・筋肉量 0.5 で表せるのは BMI 16〜21 程度）。
+そこで書き出し時に、筋肉量が平均の角の体重方向の変形を、筋肉量が最小のときの変形で置き換えている（Anny に忠実でない）。
+
+    C(muscle=0.5, weight=w) = C(0.5, 0.5) + [C(0, w) − C(0, 0.5)]    （w = 0, 1）
+
+さらにアプリでは、Anny の `weight` を 0〜1 の外（-0.25〜2）まで延長できる。範囲外の分は、筋肉量によらず
+筋肉量 0 の角の端の区間の差（`C(0, 端) − C(0, 0.5)`）を延長量 / 0.5 倍して足す（`body-model.js` の `cornerWeights`）。
 
 ### 任意のパラメータの頂点を求める
 
