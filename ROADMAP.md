@@ -65,3 +65,19 @@
 - 顔の肉付き: Anny の `weight` は頭の形をほとんど変えず、太らせると相対的に小顔に見える。Anny の局所調整（`model.local_change_labels` の `head-fat` など顔まわりの項目）を書き出しに加え、体重（BMI）に連動させて太るほど顔も丸くなるようにする
   - 書き出すのは影響のある頭部の頂点の差分だけにして、データサイズを抑える
 - `docs/data/README.md` と Service Worker のキャッシュ対象・バージョンを更新する
+
+## 9. [ ] 周囲長の項目追加（二の腕・太もも・ふくらはぎ・足首・アンダーバスト）
+- タスク6 の周囲長の仕組みに、次の5項目を追加する（任意入力、計測値の表示も既存項目と同じ扱い）
+
+  | 項目 | Anny の局所調整 |
+  |---|---|
+  | 二の腕 | `measure-upperarm-circ-decr` / `-incr` |
+  | 太もも | `measure-thigh-circ-decr` / `-incr` |
+  | ふくらはぎ | `measure-calf-circ-decr` / `-incr` |
+  | 足首 | `measure-ankle-circ-decr` / `-incr` |
+  | アンダーバスト | `measure-underbust-circ-decr` / `-incr` |
+
+- 左右がある部位（二の腕・太もも・ふくらはぎ・足首）は、入力は1つにして左右同じ値として扱う
+- 各項目の計測に使う頂点のループを決める（既存の `measurements` と同じ形式）
+- 書き出しは影響のある頂点の差分だけにして、データサイズを抑える（既存の胸囲・ウエスト・ヒップも同じ形式に揃えてよい）
+- `docs/data/README.md` と Service Worker のキャッシュ対象・バージョンを更新する
