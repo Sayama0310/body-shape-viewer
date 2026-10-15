@@ -690,3 +690,83 @@ input[type="range"]::-moz-range-thumb {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* --- 人の切り替え（2人表示） --- */
+.people-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  overflow-x: auto;
+}
+
+.people-tabs button {
+  flex-shrink: 0;
+  max-width: 10em;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--field);
+  border: 0;
+  border-radius: 999px;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.people-tabs button[aria-selected="true"] {
+  color: #fff;
+  background: var(--accent);
+  font-weight: 600;
+}
+
+.people-tabs .tab-add,
+.people-tabs .tab-remove {
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.text-input {
+  min-width: 11em;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 3D 表示上の名前 */
+.person-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.person-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  background: var(--overlay);
+  border-radius: 999px;
+  transform: translate(-50%, -100%);
+  transition: opacity var(--dur) var(--ease);
+}
+
+.person-label.is-active {
+  box-shadow: 0 0 0 2px var(--accent);
+}

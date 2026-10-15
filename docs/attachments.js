@@ -21,12 +21,26 @@ function view(buffer, block, Type) {
 }
 
 export class Attachment {
-  static async load(info) {
+  // 読み込んだデータ（バインドとテクスチャ）は人ごとのメッシュで共有できるので、読み込みとメッシュ作りを分ける
+  static async loadData(info) {
     const res = await fetch(new URL(info.file, BASE_URL));
     if (!res.ok) throw new Error(`${info.label} を読み込めませんでした（${res.status}）`);
     const buffer = await res.arrayBuffer();
     const texture = info.texture ? await new THREE.TextureLoader().loadAsync(new URL(info.texture, BASE_URL).href) : null;
+    if (texture) {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.flipY = true;
+      texture.anisotropy = 4;
+    }
+    return { info, buffer, texture };
+  }
+
+  static fromLoaded({ info, buffer, texture }) {
     return new Attachment(info, buffer, texture);
+  }
+
+  static async load(info) {
+    return Attachment.fromLoaded(await Attachment.loadData(info));
   }
 
   constructor(info, buffer, texture) {
@@ -42,11 +56,6 @@ export class Attachment {
     geometry.setAttribute('uv', new THREE.BufferAttribute(view(buffer, info.layout.uv, Float32Array), 2));
     geometry.setIndex(new THREE.BufferAttribute(view(buffer, info.layout.index, Uint16Array), 1));
 
-    if (texture) {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.flipY = true;
-      texture.anisotropy = 4;
-    }
     const material = new THREE.MeshStandardMaterial({
       map: texture,
       roughness: 0.85,

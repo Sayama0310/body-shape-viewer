@@ -89,6 +89,7 @@ function nearestSnap(h) {
 let drag = null;
 
 grip.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.people-tabs')) return; // 人の切り替えのボタンはドラッグに使わない
   cancelAnimationFrame(anim?.raf);
   anim = null;
   drag = { id: e.pointerId, y0: e.clientY, h0: height, moved: false, samples: [{ t: e.timeStamp, y: e.clientY }] };

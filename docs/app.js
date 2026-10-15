@@ -1,23 +1,25 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { loadBodyModel, createShapeMapper, GIRTHS, DEFAULT_AGE } from './body-model.js';
+import { loadBodyData, loadShapeBuffer, BodyModel, createShapeMapper, GIRTHS, DEFAULT_AGE } from './body-model.js';
 import { loadAssetCatalog, Attachment, visibleBodyIndex } from './attachments.js';
 
-// Anny のメッシュを身長・体重・性別に合わせて合成して表示する。
+// Anny のメッシュを身長・体重・性別などに合わせて合成して表示する。最大2人を並べて表示できる。
 
 const STORAGE_KEY = 'body-shape-viewer:input';
 const SEXES = ['male', 'female'];
+const MAX_PEOPLE = 2;
+const PERSON_GAP = 0.25; // 2人の間のすき間（m）
 
 const container = document.getElementById('viewer');
 const statusEl = document.getElementById('viewer-status');
-const heightRange = document.getElementById('height');
-const weightRange = document.getElementById('weight');
-const heightNumber = document.getElementById('height-num');
-const weightNumber = document.getElementById('weight-num');
-const sexInputs = document.querySelectorAll('input[name="sex"]');
 const bmiOut = document.getElementById('bmi');
 const bmiClassOut = document.getElementById('bmi-class');
 const girthSummary = document.getElementById('girth-summary');
+const sexInputs = document.querySelectorAll('input[name="sex"]');
+const nameInput = document.getElementById('person-name');
+const tabsEl = document.getElementById('people-tabs');
+const labelsEl = document.getElementById('person-labels');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const GIRTH_LABELS = {
   chest: '胸囲',
   underbust: 'アンダーバスト',
@@ -30,6 +32,11 @@ const GIRTH_LABELS = {
 };
 // 折りたたんだ欄の見出しに出す項目
 const SUMMARY_GIRTHS = ['chest', 'waist', 'hip'];
+
+// 表示中の人（Person）。最大 MAX_PEOPLE 人
+const people = [];
+
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
 // --- シーン ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -112,17 +119,19 @@ controls.maxDistance = 8;
 controls.maxPolarAngle = Math.PI * 0.55; // 床の下には回り込まない
 
 // --- 視点 ---
-// 体の高さに合わせて注視点と距離を決める。ボタンで正面・横・後ろへ回り込む
+// 全員の大きさに合わせて注視点と距離を決める。ボタンで正面・横・後ろへ回り込む
 const VIEWS = { front: 0, side: Math.PI / 2, back: Math.PI };
 const VIEW_ELEVATION = THREE.MathUtils.degToRad(6);
-let bodyHeight = 1.7;
+let bodyHeight = 1.7; // 表示中の人のうち最も高い身長（m）
+let groupWidth = 0.6; // 表示中の人全員の横幅（m）
 let tween = null;
 
 function fitDistance() {
   const halfFov = THREE.MathUtils.degToRad(FOV / 2);
-  const vertical = (bodyHeight * 0.62) / Math.tan(halfFov);
-  // 横長でない（縦長の）表示では横幅でも収まるようにする
-  const horizontal = (0.5 / Math.tan(halfFov)) / Math.min(camera.aspect || 1, 1);
+  // 2人のときは頭の上の名前も入るよう上下に少し余裕を持たせる
+  const vertical = (bodyHeight * (people.length > 1 ? 0.7 : 0.62)) / Math.tan(halfFov);
+  // 縦長の表示では横幅でも収まるようにする
+  const horizontal = ((groupWidth * 0.5 + 0.25) / Math.tan(halfFov)) / Math.min(camera.aspect || 1, 1);
   return Math.max(vertical, horizontal);
 }
 
@@ -130,7 +139,7 @@ function sphericalOf(position) {
   return new THREE.Spherical().setFromVector3(position.clone().sub(controls.target));
 }
 
-// 全身が収まる注視点（体の中ほど）
+// 全員が収まる注視点
 function fullTarget() {
   return new THREE.Vector3(0, bodyHeight * 0.5, 0);
 }
@@ -168,7 +177,7 @@ function setView(name, { animate = true } = {}) {
 function stepTween(now) {
   if (!tween) return;
   const t = Math.min((now - tween.start) / tween.duration, 1);
-  const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; // ease-in-out
+  const e = ease(t);
   const { from, to } = tween;
   controls.target.lerpVectors(tween.fromTarget, tween.toTarget, e);
   const s = new THREE.Spherical(
@@ -180,11 +189,12 @@ function stepTween(now) {
   if (t >= 1) tween = null;
 }
 
-// 平行移動しても体から大きく離れないよう、注視点を体のまわりの箱に収める（カメラも同じだけ戻す）
+// 平行移動しても体から大きく離れないよう、注視点を全員のまわりの箱に収める（カメラも同じだけ戻す）
 controls.addEventListener('change', () => {
   const t = controls.target;
+  const halfX = groupWidth * 0.5 + 0.3;
   const clamped = new THREE.Vector3(
-    THREE.MathUtils.clamp(t.x, -0.6, 0.6),
+    THREE.MathUtils.clamp(t.x, -halfX, halfX),
     THREE.MathUtils.clamp(t.y, 0.05, bodyHeight * 1.02),
     THREE.MathUtils.clamp(t.z, -0.5, 0.5),
   );
@@ -194,7 +204,7 @@ controls.addEventListener('change', () => {
   }
 });
 
-// ダブルタップ: 体の当たった部位に寄る。寄っているときにもう一度ダブルタップすると全身に戻る
+// ダブルタップ: 体の当たった部位に寄る（その人を入力中にする）。寄っているときにもう一度ダブルタップすると全身に戻る
 const FOCUS_DISTANCE = 0.7;
 let focused = false;
 let lastTap = null;
@@ -210,7 +220,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     lastTap = { t: now, x: e.clientX, y: e.clientY };
   }
 });
-// 指を動かした（回転・パン）ならタップとして数えない
+// 2本目の指が触れたらタップとして数えない
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (!e.isPrimary) lastTap = null;
 });
@@ -220,12 +230,14 @@ function onDoubleTap(e) {
     setView('full');
     return;
   }
-  if (!body) return;
   const rect = renderer.domElement.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObject(body.figure, true)[0];
+  const figures = people.filter((p) => p.figure).map((p) => p.figure);
+  const hit = raycaster.intersectObjects(figures, true)[0];
   if (!hit) return;
+  const owner = people.find((p) => p.figure && hit.object.parent === p.figure);
+  if (owner && owner !== activePerson()) selectPerson(people.indexOf(owner));
   const sph = sphericalOf(camera.position);
   sph.radius = Math.min(sph.radius, FOCUS_DISTANCE);
   moveCamera(hit.point, sph);
@@ -235,17 +247,23 @@ function onDoubleTap(e) {
 // 指で回し始めたら視点の移動をやめる
 controls.addEventListener('start', () => (tween = null));
 
-// 身長が変わったら、注視点の高さを身長の変化に合わせて動かす（カメラも同じだけ動かす）。
+// 全員の身長・横幅が変わったら、注視点の高さを身長の変化に合わせて動かす（カメラも同じだけ動かす）。
 // 全身表示なら体の中ほどのまま、部位に寄っていれば寄った部位の近くのままになる
-function setBodyHeight(h) {
-  const dy = (h - bodyHeight) * (controls.target.y / bodyHeight);
-  bodyHeight = h;
+function setGroupSize(height, width) {
+  const dy = (height - bodyHeight) * (controls.target.y / bodyHeight);
+  bodyHeight = height;
+  groupWidth = width;
   controls.target.y += dy;
   camera.position.y += dy;
   if (tween) {
     tween.fromTarget.y += dy;
     tween.toTarget.y += dy;
   }
+  // 影を落とす範囲と床の円も全員が収まる大きさにする
+  const half = Math.max(1, width * 0.5 + 0.5);
+  Object.assign(keyLight.shadow.camera, { left: -half, right: half });
+  keyLight.shadow.camera.updateProjectionMatrix();
+  floor.scale.setScalar(Math.max(1, (width * 0.5 + 0.45) / 0.9));
 }
 
 // 最初は少し斜め前から見る
@@ -260,7 +278,6 @@ for (const button of document.querySelectorAll('[data-view]')) {
 // --- 使い方 ---
 // 開くときは表示してから is-open を付けてフェード・スライドさせ、閉じるときは逆にしてから閉じる
 const helpDialog = document.getElementById('help');
-const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 function openHelp() {
   helpDialog.showModal();
   requestAnimationFrame(() => helpDialog.classList.add('is-open'));
@@ -282,7 +299,7 @@ helpDialog.addEventListener('cancel', (e) => {
 
 // --- 体形 ---
 // 肌の色は頂点色で塗る（唇・爪などの部位ごとに少し色を変える）
-const material = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.62, metalness: 0 });
+const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.62, metalness: 0 });
 
 // 肌の色のプリセット（明るい → 暗い）。4 番目がこれまでの色
 const SKIN_TONES = [
@@ -318,209 +335,269 @@ const REGION_TINTS = {
   eyelids: (c) => c.clone().multiplyScalar(0.88),
 };
 
-function applySkin() {
-  if (!body) return;
-  const base = new THREE.Color(SKIN_TONES[state.skin].hex);
-  const colors = body.colors.array;
-  const regions = body.skinRegions;
-  const tints = regions ? regions.channels.map((name) => REGION_TINTS[name]?.(base) ?? base) : [];
-  const n = body.model.vertexCount;
-  const c = new THREE.Color();
-  for (let i = 0; i < n; i++) {
-    c.copy(base);
-    for (let k = 0; k < tints.length; k++) {
-      const w = regions.weights[i * tints.length + k] / 255;
-      if (w > 0) c.lerp(tints[k], w);
-    }
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
-  }
-  body.colors.needsUpdate = true;
-}
-let body = null; // { model, mapShape, mesh, positions }
-
 function showStatus(text) {
   if (text) statusEl.textContent = text; // 消すときは文字を残したままフェードアウトさせる
   statusEl.classList.toggle('is-shown', Boolean(text));
   statusEl.setAttribute('aria-hidden', String(!text));
 }
 
-async function initBody() {
-  showStatus('体形データを読み込み中…');
-  try {
-    const [model, skinRegions] = await Promise.all([loadBodyModel(state.variant), loadSkinRegions()]);
-    state.variant = model.variant; // 読めなかった傾向は標準に戻る
-    const positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
-    const colors = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', positions);
-    geometry.setAttribute('color', colors);
-    geometry.setIndex(new THREE.BufferAttribute(model.index, 1));
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    // 体と、体に追従するアセット（服・髪）をまとめて接地させる
-    const figure = new THREE.Group();
-    figure.add(mesh);
-    scene.add(figure);
-    const fullIndex = geometry.index;
-    body = { model, mapShape: createShapeMapper(model), mesh, positions, colors, skinRegions, figure, fullIndex, visibleIndex: fullIndex };
-    applySkin();
-    updateBody();
-  } catch (err) {
-    console.error(err);
-    showStatus('体形データを読み込めませんでした。再読み込みしてください。');
-    return;
-  }
-  initWardrobe();
-}
-
-// --- 服装（体に追従するアセット） ---
-// 選択肢は data/assets/index.json から作る。アセット本体は選ばれたときに読み込む
-const SLOTS = ['top', 'bottom'];
-const slotSelects = Object.fromEntries(SLOTS.map((slot) => [slot, document.getElementById(`outfit-${slot}`)]));
+// 全員で共有するデータ（体形データの共通部分・肌の塗り分け・服の一覧）
+let shared = null;
 let catalog = [];
-const loadedAssets = new Map(); // id -> Promise<Attachment>
-let worn = []; // 表示中の Attachment
+const loadedAssets = new Map(); // id -> Promise<Attachment>（人ごとに別のメッシュを作るので、読み込んだデータだけ共有）
+const SLOTS = ['top', 'bottom'];
 
-async function initWardrobe() {
-  try {
-    catalog = await loadAssetCatalog();
-  } catch (err) {
-    console.error(err);
-    return;
-  }
-  for (const slot of SLOTS) {
-    const select = slotSelects[slot];
-    for (const a of catalog.filter((x) => x.slot === slot)) select.add(new Option(a.label, a.id));
-    if (!catalog.some((a) => a.id === state[slot])) state[slot] = null;
-    select.value = state[slot] ?? '';
-    select.addEventListener('change', () => {
-      state[slot] = select.value || null;
-      save();
-      updateSummaries();
-      applyOutfit();
-    });
-  }
-  updateSummaries();
-  applyOutfit();
+function defaultState(index) {
+  return {
+    name: '',
+    height: index === 0 ? 170 : 158,
+    weight: index === 0 ? 65 : 52,
+    age: DEFAULT_AGE,
+    muscle: null, // 0〜100。自動なら null
+    sex: index === 0 ? 'male' : 'female',
+    ...Object.fromEntries(GIRTHS.map((g) => [g, null])), // 周囲長は未入力なら null
+    top: null, // 服装（アセットの id、なしなら null）
+    bottom: null,
+    skin: DEFAULT_SKIN, // 肌の色（SKIN_TONES の番号）
+    variant: 'standard', // 体格の傾向（data の shapes のキー）
+  };
 }
 
-function loadAsset(id) {
+// 1人分の体（入力・合成した頂点・メッシュ・服）
+class Person {
+  constructor(state) {
+    this.state = state;
+    this.autoMuscle = 50;
+    this.girths = null;
+    this.inRange = true;
+    this.worn = [];
+    this.morph = null;
+    this.request = { outfit: 0, variant: 0 };
+    this.x = 0; // 並べたときの位置（目標）
+    this.label = document.createElement('div');
+    this.label.className = 'person-label';
+    labelsEl.append(this.label);
+  }
+
+  async init() {
+    const { meta, shared: buffer } = shared.body;
+    const model = new BodyModel(meta, buffer);
+    const variant = this.state.variant in meta.shapes ? this.state.variant : 'standard';
+    model.setShape(variant, await loadShapeBuffer(meta, variant));
+    this.state.variant = variant; // 読めなかった傾向は標準に戻る
+    this.model = model;
+    this.mapShape = createShapeMapper(model);
+    this.positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
+    this.colors = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', this.positions);
+    geometry.setAttribute('color', this.colors);
+    this.fullIndex = new THREE.BufferAttribute(model.index, 1);
+    this.visibleIndex = this.fullIndex;
+    geometry.setIndex(this.fullIndex);
+    this.mesh = new THREE.Mesh(geometry, bodyMaterial);
+    this.mesh.castShadow = true;
+    // 体と、体に追従するアセット（服・髪）をまとめて接地させる
+    this.figure = new THREE.Group();
+    this.figure.add(this.mesh);
+    scene.add(this.figure);
+    this.applySkin();
+    this.update();
+    this.applyOutfit();
+  }
+
+  dispose() {
+    if (this.figure) {
+      scene.remove(this.figure);
+      this.mesh.geometry.dispose();
+      for (const a of this.worn) a.mesh.geometry.dispose();
+    }
+    this.label.remove();
+  }
+
+  applySkin() {
+    if (!this.model) return;
+    const base = new THREE.Color(SKIN_TONES[this.state.skin].hex);
+    const colors = this.colors.array;
+    const regions = shared.skinRegions;
+    const tints = regions ? regions.channels.map((name) => REGION_TINTS[name]?.(base) ?? base) : [];
+    const n = this.model.vertexCount;
+    const c = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      c.copy(base);
+      for (let k = 0; k < tints.length; k++) {
+        const w = regions.weights[i * tints.length + k] / 255;
+        if (w > 0) c.lerp(tints[k], w);
+      }
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    this.colors.needsUpdate = true;
+  }
+
+  // 入力から体形を合成する。quick: スライダー操作中（周囲長の調整は前回のまま身長・体重だけ合わせる）
+  update({ quick = false } = {}) {
+    if (!this.model) return;
+    const s = this.state;
+    const girthsCm = Object.fromEntries(GIRTHS.map((g) => [g, s[g] ?? NaN]));
+    const shape = this.mapShape(
+      {
+        sex: s.sex,
+        ageYears: s.age,
+        heightCm: s.height,
+        weightKg: s.weight,
+        muscle: s.muscle == null ? null : s.muscle / 100,
+        girthsCm,
+      },
+      { quick },
+    );
+    this.morph = null; // 入力が変わったら、途中の切り替えアニメーションは終わりにして新しい形にする
+    this.model.blend(shape.params, this.positions.array);
+    this.autoMuscle = Math.round(shape.params.muscle * 100);
+    const { minY, girths, height } = this.model.measure(this.positions.array);
+    this.girths = girths;
+    this.height = height;
+    this.inRange = shape.inRange;
+    this.figure.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
+    this.refreshGeometry();
+  }
+
+  // 頂点を書き換えた後の更新（法線・横幅・服の追従）
+  refreshGeometry() {
+    const { mesh, positions } = this;
+    positions.needsUpdate = true;
+    // 法線は隠した三角形も含めて計算する（服を脱いだときに隠れていた部分の法線が古くならないように）
+    mesh.geometry.setIndex(this.fullIndex);
+    mesh.geometry.computeVertexNormals();
+    mesh.geometry.setIndex(this.visibleIndex);
+    mesh.geometry.computeBoundingSphere();
+    mesh.geometry.computeBoundingBox();
+    const box = mesh.geometry.boundingBox;
+    this.width = box.max.x - box.min.x;
+    this.centerX = (box.max.x + box.min.x) / 2;
+    for (const a of this.worn) a.update(positions.array);
+  }
+
+  async applyOutfit() {
+    if (!this.model || !catalog.length) return;
+    const request = ++this.request.outfit;
+    const ids = SLOTS.map((slot) => this.state[slot]).filter(Boolean);
+    let next;
+    try {
+      next = await Promise.all(ids.map(async (id) => this.worn.find((a) => a.info.id === id) ?? Attachment.fromLoaded(await loadAssetData(id))));
+    } catch (err) {
+      console.error(err);
+      showStatus('服のデータを読み込めませんでした');
+      return;
+    }
+    if (request !== this.request.outfit) return; // 読み込み中に選び直された
+    for (const a of this.worn) {
+      if (!next.includes(a)) {
+        this.figure.remove(a.mesh);
+        a.mesh.geometry.dispose();
+      }
+    }
+    for (const a of next) if (!this.worn.includes(a)) this.figure.add(a.mesh);
+    this.worn = next;
+    // 服の下に隠れる体の三角形を描かない（法線は全部の三角形から計算する）
+    this.visibleIndex = new THREE.BufferAttribute(visibleBodyIndex(this.model.index, this.worn), 1);
+    this.mesh.geometry.setIndex(this.visibleIndex);
+    for (const a of this.worn) a.update(this.positions.array);
+  }
+
+  // 選んだ傾向の形状データを読み込み（初めてならネットワークから）、今の体形から新しい体形へなめらかに変える
+  async applyVariant() {
+    if (!this.model || this.model.variant === this.state.variant) return;
+    const request = ++this.request.variant;
+    const from = { positions: this.positions.array.slice(), y: this.figure.position.y };
+    try {
+      showStatus('体格の傾向のデータを読み込み中…');
+      await this.model.loadShape(this.state.variant);
+    } catch (err) {
+      console.error(err);
+      showStatus('データを読み込めませんでした（オフラインでは、一度選んだことのある傾向だけ使えます）');
+      return;
+    }
+    if (request !== this.request.variant) return;
+    this.mapShape = createShapeMapper(this.model);
+    this.update();
+    afterUpdate(this);
+    if (reduceMotion.matches) return;
+    this.morph = {
+      from,
+      to: { positions: this.positions.array.slice(), y: this.figure.position.y },
+      start: performance.now(),
+      duration: 600,
+    };
+    this.stepMorph(performance.now());
+  }
+
+  stepMorph(now) {
+    const m = this.morph;
+    if (!m) return;
+    const t = Math.min((now - m.start) / m.duration, 1);
+    const e = ease(t);
+    const out = this.positions.array;
+    for (let i = 0; i < out.length; i++) out[i] = m.from.positions[i] + (m.to.positions[i] - m.from.positions[i]) * e;
+    this.figure.position.y = m.from.y + (m.to.y - m.from.y) * e;
+    this.refreshGeometry();
+    if (t >= 1) this.morph = null;
+  }
+
+  displayName(index) {
+    return this.state.name.trim() || `${index + 1}人目`;
+  }
+}
+
+function loadAssetData(id) {
   if (!loadedAssets.has(id)) {
-    loadedAssets.set(id, Attachment.load(catalog.find((a) => a.id === id)));
+    const p = Attachment.loadData(catalog.find((a) => a.id === id));
+    p.catch(() => loadedAssets.delete(id));
+    loadedAssets.set(id, p);
   }
   return loadedAssets.get(id);
 }
 
-let outfitRequest = 0;
-async function applyOutfit() {
-  if (!body) return;
-  const request = ++outfitRequest;
-  const ids = SLOTS.map((slot) => state[slot]).filter(Boolean);
-  let next;
-  try {
-    next = await Promise.all(ids.map(loadAsset));
-  } catch (err) {
-    console.error(err);
-    showStatus('服のデータを読み込めませんでした');
-    return;
+// --- 人の一覧 ---
+let active = 0;
+const activePerson = () => people[active];
+let state = null; // 入力中の人の state（入力欄はこれを読み書きする）
+
+// 並べ方: 横幅に合わせて間隔を決め、全体の中心を原点にする
+function layoutPeople({ animate = true } = {}) {
+  const ready = people.filter((p) => p.model);
+  if (!ready.length) return;
+  const total = ready.reduce((sum, p) => sum + p.width, 0) + PERSON_GAP * (ready.length - 1);
+  let x = -total / 2;
+  for (const p of ready) {
+    p.x = x + p.width / 2 - p.centerX;
+    x += p.width + PERSON_GAP;
+    if (!animate || reduceMotion.matches || p.placed !== true) {
+      p.figure.position.x = p.x;
+      p.placed = true;
+    }
   }
-  if (request !== outfitRequest) return; // 読み込み中に選び直された
-  for (const a of worn) if (!next.includes(a)) body.figure.remove(a.mesh);
-  for (const a of next) if (!worn.includes(a)) body.figure.add(a.mesh);
-  worn = next;
-  // 服の下に隠れる体の三角形を描かない（法線は updateBody で全部の三角形から計算する）
-  body.visibleIndex = new THREE.BufferAttribute(visibleBodyIndex(body.model.index, worn), 1);
-  body.mesh.geometry.setIndex(body.visibleIndex);
-  for (const a of worn) a.update(body.positions.array);
+  setGroupSize(Math.max(...ready.map((p) => p.height)), total);
 }
 
-// quick: スライダー操作中。周囲長の調整は前回のまま身長・体重だけ合わせる（指を離したら全体を合わせ直す）
-function updateBody({ quick = false } = {}) {
-  if (!body) return;
-  const { model, mapShape, mesh, positions } = body;
-  const girthsCm = Object.fromEntries(GIRTHS.map((g) => [g, state[g] ?? NaN]));
-  const shape = mapShape(
-    {
-      sex: state.sex,
-      ageYears: state.age,
-      heightCm: state.height,
-      weightKg: state.weight,
-      muscle: state.muscle == null ? null : state.muscle / 100,
-      girthsCm,
-    },
-    { quick },
-  );
-  body.morph = null; // 入力が変わったら、途中の切り替えアニメーションは終わりにして新しい形にする
-  model.blend(shape.params, positions.array);
-  if (state.muscle == null) showAutoMuscle(Math.round(shape.params.muscle * 100));
-  const { minY, girths, height } = model.measure(positions.array);
-  showGirths(girths);
-  setBodyHeight(height);
-  body.figure.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
-  refreshGeometry();
-  showStatus(shape.inRange ? '' : 'モデルで表せる範囲を超えているため、近い体形を表示しています');
-}
-
-// 頂点を書き換えた後の更新（法線・服の追従）
-function refreshGeometry() {
-  const { mesh, positions } = body;
-  positions.needsUpdate = true;
-  // 法線は隠した三角形も含めて計算する（服を脱いだときに隠れていた部分の法線が古くならないように）
-  mesh.geometry.setIndex(body.fullIndex);
-  mesh.geometry.computeVertexNormals();
-  mesh.geometry.setIndex(body.visibleIndex);
-  mesh.geometry.computeBoundingSphere();
-  for (const a of worn) a.update(positions.array);
-}
-
-// --- 体格の傾向 ---
-// 選んだ傾向の形状データを読み込み（初めてならネットワークから）、今の体形から新しい体形へなめらかに変える
-const variantSelect = document.getElementById('variant');
-let variantRequest = 0;
-async function applyVariant() {
-  if (!body || body.model.variant === state.variant) return;
-  const request = ++variantRequest;
-  const from = { positions: body.positions.array.slice(), y: body.figure.position.y };
-  try {
-    showStatus('体格の傾向のデータを読み込み中…');
-    await body.model.loadShape(state.variant);
-  } catch (err) {
-    console.error(err);
-    showStatus('データを読み込めませんでした（オフラインでは、一度選んだことのある傾向だけ使えます）');
-    return;
+// 並べた位置へなめらかに動かす
+function stepLayout(dt) {
+  const k = 1 - Math.exp(-dt / 120);
+  for (const p of people) {
+    if (!p.figure) continue;
+    p.figure.position.x += (p.x - p.figure.position.x) * k;
   }
-  if (request !== variantRequest) return;
-  body.mapShape = createShapeMapper(body.model);
-  updateBody();
-  if (reduceMotion.matches) return;
-  body.morph = {
-    from,
-    to: { positions: body.positions.array.slice(), y: body.figure.position.y },
-    start: performance.now(),
-    duration: 600,
-  };
-  stepMorph(performance.now());
 }
 
-function stepMorph(now) {
-  const m = body?.morph;
-  if (!m) return;
-  const t = Math.min((now - m.start) / m.duration, 1);
-  const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-  const out = body.positions.array;
-  for (let i = 0; i < out.length; i++) out[i] = m.from.positions[i] + (m.to.positions[i] - m.from.positions[i]) * e;
-  body.figure.position.y = m.from.y + (m.to.y - m.from.y) * e;
-  refreshGeometry();
-  if (t >= 1) body.morph = null;
-}
-
-// メッシュから測った周囲長を表示する
-function showGirths(girths) {
-  const cm = (g) => (girths[g] * 100).toFixed(1);
-  for (const g of GIRTHS) document.getElementById(`${g}-measured`).textContent = cm(g);
-  girthSummary.textContent = SUMMARY_GIRTHS.map((g) => `${GIRTH_LABELS[g]} ${cm(g)}`).join('・');
+// 体形を更新した後に、その人の表示と並べ方を更新する
+function afterUpdate(person) {
+  if (person === activePerson()) {
+    showGirths(person.girths);
+    if (person.state.muscle == null) showAutoMuscle(person.autoMuscle);
+    showStatus(person.inRange ? '' : 'モデルで表せる範囲を超えているため、近い体形を表示しています');
+  }
+  layoutPeople();
 }
 
 // 入力が続いても合成は1フレームに1回にする（1回でも通常の更新が頼まれていれば通常の更新にする）
@@ -534,26 +611,169 @@ function scheduleBodyUpdate({ quick = false } = {}) {
   requestAnimationFrame(() => {
     const opts = queued;
     queued = null;
-    updateBody(opts);
+    const person = activePerson();
+    if (!person?.model) return;
+    person.update(opts);
+    afterUpdate(person);
   });
 }
 
+// メッシュから測った周囲長を表示する
+function showGirths(girths) {
+  if (!girths) return;
+  const cm = (g) => (girths[g] * 100).toFixed(1);
+  for (const g of GIRTHS) document.getElementById(`${g}-measured`).textContent = cm(g);
+  girthSummary.textContent = SUMMARY_GIRTHS.map((g) => `${GIRTH_LABELS[g]} ${cm(g)}`).join('・');
+}
+
+async function addPerson(personState, { init = true } = {}) {
+  const person = new Person(personState);
+  people.push(person);
+  if (init && shared) await initPerson(person);
+  return person;
+}
+
+async function initPerson(person) {
+  try {
+    await person.init();
+  } catch (err) {
+    console.error(err);
+    showStatus('体形データを読み込めませんでした。再読み込みしてください。');
+    return;
+  }
+  afterUpdate(person);
+}
+
+function removePerson(index) {
+  const [person] = people.splice(index, 1);
+  person.dispose();
+  selectPerson(Math.min(active, people.length - 1));
+  layoutPeople();
+  setView('full');
+  save();
+}
+
+// 入力欄をその人の値に切り替える（再計算はしない）
+function selectPerson(index) {
+  active = index;
+  state = people[active].state;
+  renderTabs();
+  render({ update: false });
+  const person = activePerson();
+  if (person.model) afterUpdate(person);
+  save();
+}
+
+function renderTabs() {
+  tabsEl.replaceChildren();
+  if (people.length > 1) {
+    people.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.role = 'tab';
+      b.textContent = p.displayName(i);
+      b.setAttribute('aria-selected', String(i === active));
+      b.addEventListener('click', () => selectPerson(i));
+      tabsEl.append(b);
+    });
+  }
+  const action = document.createElement('button');
+  action.type = 'button';
+  if (people.length < MAX_PEOPLE) {
+    action.className = 'tab-add';
+    action.textContent = '＋ 2人目を追加';
+    action.addEventListener('click', async () => {
+      const person = await addPerson(defaultState(people.length));
+      selectPerson(people.indexOf(person));
+      setView('full');
+    });
+  } else {
+    action.className = 'tab-remove';
+    action.textContent = `${people[active].displayName(active)}を削除`;
+    action.addEventListener('click', () => removePerson(active));
+  }
+  tabsEl.append(action);
+}
+
+// 3D 表示上の名前: 頭の上に出す（2人のとき、または名前があるとき）
+const labelPos = new THREE.Vector3();
+function updateLabels() {
+  const rect = renderer.domElement.getBoundingClientRect();
+  people.forEach((p, i) => {
+    const show = p.model && (people.length > 1 || p.state.name.trim());
+    p.label.style.opacity = show ? '1' : '0';
+    if (!show) return;
+    p.label.textContent = p.displayName(i);
+    p.label.classList.toggle('is-active', people.length > 1 && i === active);
+    labelPos.set(p.figure.position.x + p.centerX, p.figure.position.y + (p.positions ? p.mesh.geometry.boundingBox.max.y : 0) + 0.08, 0);
+    labelPos.project(camera);
+    const x = ((labelPos.x + 1) / 2) * rect.width;
+    const y = ((1 - labelPos.y) / 2) * rect.height;
+    p.label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+  });
+}
+
+async function initScene() {
+  showStatus('体形データを読み込み中…');
+  try {
+    const [body, skinRegions] = await Promise.all([loadBodyData(), loadSkinRegions()]);
+    shared = { body, skinRegions };
+  } catch (err) {
+    console.error(err);
+    showStatus('体形データを読み込めませんでした。再読み込みしてください。');
+    return;
+  }
+  for (const person of people) await initPerson(person);
+  setView('full', { animate: false }); // 読み込んだ体の大きさに合わせる（向きは最初の斜め前のまま）
+  initWardrobe();
+}
+
+// --- 服装（体に追従するアセット） ---
+// 選択肢は data/assets/index.json から作る。アセット本体は選ばれたときに読み込む
+const slotSelects = Object.fromEntries(SLOTS.map((slot) => [slot, document.getElementById(`outfit-${slot}`)]));
+
+async function initWardrobe() {
+  try {
+    catalog = await loadAssetCatalog();
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  for (const slot of SLOTS) {
+    const select = slotSelects[slot];
+    for (const a of catalog.filter((x) => x.slot === slot)) select.add(new Option(a.label, a.id));
+    for (const p of people) if (!catalog.some((a) => a.id === p.state[slot])) p.state[slot] = null;
+    select.value = state[slot] ?? '';
+    select.addEventListener('change', () => {
+      state[slot] = select.value || null;
+      save();
+      updateSummaries();
+      activePerson().applyOutfit();
+    });
+  }
+  updateSummaries();
+  for (const p of people) p.applyOutfit();
+}
+
 // --- 入力 ---
-// 値は state に持ち、スライダーと数値入力はどちらも state を更新する。
+// 値は state（入力中の人）に持ち、スライダーと数値入力はどちらも state を更新する。
 const fields = [
-  { key: 'height', range: heightRange, number: heightNumber },
-  { key: 'weight', range: weightRange, number: weightNumber },
+  { key: 'height', range: document.getElementById('height'), number: document.getElementById('height-num') },
+  { key: 'weight', range: document.getElementById('weight'), number: document.getElementById('weight-num') },
   { key: 'age', range: document.getElementById('age'), number: document.getElementById('age-num') },
   { key: 'muscle', range: document.getElementById('muscle'), number: document.getElementById('muscle-num') },
 ];
 const muscleField = fields[3];
 const muscleAuto = document.getElementById('muscle-auto');
 const muscleFieldEl = document.getElementById('muscle-field');
+const variantSelect = document.getElementById('variant');
+const skinPicker = document.getElementById('skin-picker');
 
 // 筋肉量が自動のときは、自動で決めた値をスライダーと数値に表示する
-let autoMuscle = 50;
+function autoMuscle() {
+  return activePerson()?.autoMuscle ?? 50;
+}
 function showAutoMuscle(value) {
-  autoMuscle = value;
   updateSummaries();
   muscleField.range.value = value;
   paintRange(muscleField.range);
@@ -561,23 +781,6 @@ function showAutoMuscle(value) {
 }
 
 const girthFields = GIRTHS.map((key) => ({ key, number: document.getElementById(`${key}-num`) }));
-
-// 筋肉量（0〜100）は自動なら null、周囲長は未入力なら null
-const state = {
-  height: 170,
-  weight: 65,
-  age: DEFAULT_AGE,
-  muscle: null,
-  sex: 'male',
-  ...Object.fromEntries(GIRTHS.map((g) => [g, null])),
-  // 服装（アセットの id、なしなら null）
-  top: null,
-  bottom: null,
-  // 肌の色（SKIN_TONES の番号）
-  skin: DEFAULT_SKIN,
-  // 体格の傾向（data の shapes のキー）
-  variant: 'standard',
-};
 
 function limits(field) {
   const el = field.range ?? field.number;
@@ -603,9 +806,9 @@ function bmiClass(bmi) {
   return '肥満（4度）';
 }
 
-function render({ syncNumbers = true, quick = false } = {}) {
+function render({ syncNumbers = true, quick = false, update = true } = {}) {
   for (const f of fields) {
-    const value = state[f.key] ?? autoMuscle; // null になるのは筋肉量（自動）だけ
+    const value = state[f.key] ?? autoMuscle(); // null になるのは筋肉量（自動）だけ
     f.range.value = value;
     paintRange(f.range);
     if (syncNumbers) f.number.value = value;
@@ -616,6 +819,8 @@ function render({ syncNumbers = true, quick = false } = {}) {
   for (const input of sexInputs) input.checked = input.value === state.sex;
   variantSelect.value = state.variant;
   for (const input of skinPicker.querySelectorAll('input')) input.checked = Number(input.value) === state.skin;
+  for (const slot of SLOTS) slotSelects[slot].value = state[slot] ?? '';
+  if (document.activeElement !== nameInput) nameInput.value = state.name;
 
   const h = state.height / 100;
   const bmi = state.weight / (h * h);
@@ -623,7 +828,7 @@ function render({ syncNumbers = true, quick = false } = {}) {
   bmiClassOut.textContent = bmiClass(bmi);
   updateSummaries();
 
-  scheduleBodyUpdate({ quick });
+  if (update) scheduleBodyUpdate({ quick });
 }
 
 // たたんだシートとグループの見出しに出す要約
@@ -632,11 +837,12 @@ function updateSummaries() {
   const h = state.height / 100;
   const bmi = state.weight / (h * h);
   const basic = `${SEX_LABELS[state.sex]} · ${state.height} cm · ${state.weight} kg`;
-  document.getElementById('sheet-summary-text').textContent = basic;
+  const who = people.length > 1 || state.name.trim() ? `${activePerson().displayName(active)}: ` : '';
+  document.getElementById('sheet-summary-text').textContent = who + basic;
   document.getElementById('sheet-summary-bmi').textContent = `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}`;
   document.getElementById('basic-summary').textContent = basic;
-  const muscle = state.muscle == null ? `自動 ${autoMuscle}` : state.muscle;
-  const variant = variantSelect.selectedOptions[0]?.textContent ?? '';
+  const muscle = state.muscle == null ? `自動 ${autoMuscle()}` : state.muscle;
+  const variant = [...variantSelect.options].find((o) => o.value === state.variant)?.textContent ?? '';
   document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle} · ${variant}`;
   const label = (id) => catalog.find((a) => a.id === id)?.label;
   const outfit = SLOTS.map((slot) => label(state[slot])).filter(Boolean);
@@ -646,10 +852,31 @@ function updateSummaries() {
 
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, active, people: people.map((p) => p.state) }));
   } catch {
     // 保存できない環境（プライベートブラウズ等）では保存しない
   }
+}
+
+// 保存した1人分の値を検証して state に入れる
+function restoreState(saved, index) {
+  const s = defaultState(index);
+  if (!saved || typeof saved !== 'object') return s;
+  for (const f of fields) {
+    const v = Number(saved[f.key]);
+    if (saved[f.key] != null && isValid(f, v)) s[f.key] = round1(v);
+  }
+  if (SEXES.includes(saved.sex)) s.sex = saved.sex;
+  if (typeof saved.name === 'string') s.name = saved.name.slice(0, 12);
+  if (Number.isInteger(saved.skin) && saved.skin >= 0 && saved.skin < SKIN_TONES.length) s.skin = saved.skin;
+  if ([...variantSelect.options].some((o) => o.value === saved.variant)) s.variant = saved.variant;
+  // 服装は一覧を読み込んだ後に、存在する id か確かめる
+  for (const slot of SLOTS) if (typeof saved[slot] === 'string') s[slot] = saved[slot];
+  for (const f of girthFields) {
+    const v = Number(saved[f.key]);
+    if (saved[f.key] != null && isValid(f, v)) s[f.key] = round1(v);
+  }
+  return s;
 }
 
 function restore() {
@@ -657,22 +884,13 @@ function restore() {
   try {
     saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
   } catch {
-    return;
+    saved = null;
   }
-  if (!saved || typeof saved !== 'object') return;
-  for (const f of fields) {
-    const v = Number(saved[f.key]);
-    if (saved[f.key] != null && isValid(f, v)) state[f.key] = round1(v);
-  }
-  if (SEXES.includes(saved.sex)) state.sex = saved.sex;
-  if (Number.isInteger(saved.skin) && saved.skin >= 0 && saved.skin < SKIN_TONES.length) state.skin = saved.skin;
-  if ([...variantSelect.options].some((o) => o.value === saved.variant)) state.variant = saved.variant;
-  // 服装は一覧を読み込んだ後に、存在する id か確かめる
-  for (const slot of ['top', 'bottom']) if (typeof saved[slot] === 'string') state[slot] = saved[slot];
-  for (const f of girthFields) {
-    const v = Number(saved[f.key]);
-    if (saved[f.key] != null && isValid(f, v)) state[f.key] = round1(v);
-  }
+  // 1人だけだった以前の形式（値がそのまま並ぶ）も読む
+  const list = saved?.version === 2 && Array.isArray(saved.people) ? saved.people : [saved];
+  for (const [i, s] of list.slice(0, MAX_PEOPLE).entries()) addPerson(restoreState(s, i), { init: false });
+  active = Math.min(Math.max(Number(saved?.active) || 0, 0), people.length - 1);
+  state = people[active].state;
 }
 
 // スライダーの塗り（つまみより左）の割合を CSS 変数に入れる
@@ -763,7 +981,7 @@ for (const button of document.querySelectorAll('.stepper')) {
   let timer = null;
   const bump = () => {
     const { min, max } = limits(f);
-    const current = state[f.key] ?? autoMuscle;
+    const current = state[f.key] ?? autoMuscle();
     state[f.key] = round1(THREE.MathUtils.clamp(current + dir * STEPS[f.key], min, max));
     render({ quick: true });
   };
@@ -797,7 +1015,7 @@ for (const button of document.querySelectorAll('.stepper')) {
 
 // 自動にすると筋肉量の指定を外す。外すと今の自動の値から手動で調整できる
 muscleAuto.addEventListener('change', () => {
-  state.muscle = muscleAuto.checked ? null : autoMuscle;
+  state.muscle = muscleAuto.checked ? null : autoMuscle();
   render();
   save();
 });
@@ -806,11 +1024,10 @@ variantSelect.addEventListener('change', () => {
   state.variant = variantSelect.value;
   updateSummaries();
   save();
-  applyVariant();
+  activePerson().applyVariant();
 });
 
 // 肌の色の選択肢
-const skinPicker = document.getElementById('skin-picker');
 SKIN_TONES.forEach((tone, i) => {
   const label = document.createElement('label');
   label.className = 'swatch';
@@ -821,7 +1038,7 @@ SKIN_TONES.forEach((tone, i) => {
 for (const input of skinPicker.querySelectorAll('input')) {
   input.addEventListener('change', () => {
     state.skin = Number(input.value);
-    applySkin();
+    activePerson().applySkin();
     updateSummaries();
     save();
   });
@@ -836,11 +1053,19 @@ for (const input of sexInputs) {
   });
 }
 
+nameInput.addEventListener('input', () => {
+  state.name = nameInput.value.slice(0, 12);
+  renderTabs();
+  updateSummaries();
+  save();
+});
+
 restore();
 // 周囲長を入力済みなら、その欄を開いた状態で始める
 if (girthFields.some((f) => state[f.key] != null)) document.getElementById('girths').dataset.open = 'true';
-render();
-initBody();
+renderTabs();
+render({ update: false });
+initScene();
 
 // --- 描画 ---
 // canvas は全画面のまま、シートより上に見えている領域（幅 w × 高さ visible）を1枚の画面として投影する。
@@ -868,10 +1093,15 @@ function resize() {
 new ResizeObserver(resize).observe(container);
 resize();
 
+let lastFrame = performance.now();
 renderer.setAnimationLoop((now) => {
+  const dt = Math.min(now - lastFrame, 100);
+  lastFrame = now;
   updateViewport();
   stepTween(now);
-  stepMorph(now);
+  for (const p of people) p.stepMorph(now);
+  stepLayout(dt);
   controls.update();
   renderer.render(scene, camera);
+  updateLabels();
 });

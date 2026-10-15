@@ -10,16 +10,33 @@ export const BODY_DENSITY = 980; // kg/m³
 // 周囲長の名前（data の measurements / localChanges の name と同じ）
 export const GIRTHS = ['chest', 'underbust', 'waist', 'hip', 'upperarm', 'thigh', 'calf', 'ankle'];
 
-// variant: 体格の傾向（data の shapes のキー）。共通データと、その傾向の形状だけを読み込む
-export async function loadBodyModel(variant = 'standard') {
+// 体形データの共通部分（メタデータと anny-body.bin）を読み込む。形状は loadShapeBuffer で傾向ごとに読む
+export async function loadBodyData() {
   const meta = await fetchJson(DATA_URL);
   if (meta.formatVersion !== FORMAT_VERSION) {
     throw new Error(`未対応のデータ形式です（formatVersion ${meta.formatVersion}）`);
   }
+  const shared = await fetchBuffer(new URL('./anny-body.bin', DATA_URL));
+  return { meta, shared };
+}
+
+// 傾向ごとの形状データ。複数の人で同じ傾向を使うときは1回だけ読む
+const shapeCache = new Map();
+export function loadShapeBuffer(meta, variant) {
+  if (!shapeCache.has(variant)) {
+    const p = fetchBuffer(new URL(meta.shapes[variant].file, DATA_URL));
+    p.catch(() => shapeCache.delete(variant)); // 失敗したら次はやり直す
+    shapeCache.set(variant, p);
+  }
+  return shapeCache.get(variant);
+}
+
+// variant: 体格の傾向（data の shapes のキー）。共通データとその傾向の形状を読み込んで BodyModel を作る
+export async function loadBodyModel(variant = 'standard', data = null) {
+  const { meta, shared } = data ?? (await loadBodyData());
   if (!(variant in meta.shapes)) variant = 'standard';
-  const [shared, shape] = await Promise.all([fetchBuffer(new URL('./anny-body.bin', DATA_URL)), fetchShape(meta, variant)]);
   const model = new BodyModel(meta, shared);
-  model.setShape(variant, shape);
+  model.setShape(variant, await loadShapeBuffer(meta, variant));
   return model;
 }
 
@@ -27,10 +44,6 @@ async function fetchBuffer(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`体形データを読み込めませんでした（${res.status}）`);
   return res.arrayBuffer();
-}
-
-export function fetchShape(meta, variant) {
-  return fetchBuffer(new URL(meta.shapes[variant].file, DATA_URL));
 }
 
 async function fetchJson(url) {
@@ -142,7 +155,7 @@ export class BodyModel {
     this.cornerSize = this.vertexCount * 3;
   }
 
-  // 体格の傾向の形状（角の頂点）を差し替える。buffer は fetchShape で読み込んだもの
+  // 体格の傾向の形状（角の頂点）を差し替える。buffer は loadShapeBuffer で読み込んだもの
   setShape(variant, buffer) {
     const shape = this.meta.shapes[variant];
     this.variant = variant;
@@ -154,7 +167,7 @@ export class BodyModel {
   }
 
   async loadShape(variant) {
-    this.setShape(variant, await fetchShape(this.meta, variant));
+    this.setShape(variant, await loadShapeBuffer(this.meta, variant));
   }
 
   // 0 でない重みを持つ角の [{corner, weight}]
