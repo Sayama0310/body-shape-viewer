@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Body Shape Viewer</title>
+  <meta name="theme-color" content="#f2f2f5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="体形ビューア">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
     {
@@ -15,6 +23,10 @@
   </script>
 </head>
 <body>
+  <div id="update-banner" class="update-banner" role="status" hidden>
+    <span>新しいバージョンがあります</span>
+    <button type="button" id="update-button">更新</button>
+  </div>
   <main class="app">
     <div id="viewer" class="viewer">
       <p id="viewer-status" class="viewer-status" role="status" hidden></p>
@@ -44,5 +56,6 @@
     </form>
   </main>
   <script type="module" src="app.js"></script>
+  <script type="module" src="pwa.js"></script>
 </body>
 </html>

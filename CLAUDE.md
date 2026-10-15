@@ -14,6 +14,7 @@ iPhoneのSafariで開き「ホーム画面に追加」して使う（PWA）。Ap
 ## 技術構成
 - フロント: HTML / JavaScript / Three.js（ビルド不要の素の構成。Three.js は docs/ 内に同梱するか ES module の importmap で読む）
 - ホスティング: GitHub Pages（公開元は `main` ブランチの `/docs`）
+- Service Worker: `docs/` のファイルを追加・変更したら `node tools/update-sw.mjs` を実行し、`docs/sw.js` のキャッシュ一覧とバージョンを更新してコミットする（`--check` で更新漏れを確認できる）
 - 体形モデル: Anny（NAVER LABS Europe, Apache 2.0）
   - Python（PyTorch）で基本メッシュとブレンドシェイプを事前に書き出し、JS側で重み付き合成して頂点を計算する
   - 使用前に LICENSE / NOTICE を確認し、必要な表記を docs/ に含める
