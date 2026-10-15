@@ -103,8 +103,11 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', app
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.enablePan = false;
-controls.minDistance = 0.8;
+// 2本指: ピンチで中点に向かって寄る・ドラッグで平行移動
+controls.enablePan = true;
+controls.screenSpacePanning = true;
+controls.zoomToCursor = true;
+controls.minDistance = 0.3;
 controls.maxDistance = 8;
 controls.maxPolarAngle = Math.PI * 0.55; // 床の下には回り込まない
 
@@ -127,18 +130,39 @@ function sphericalOf(position) {
   return new THREE.Spherical().setFromVector3(position.clone().sub(controls.target));
 }
 
-function setView(name, { animate = true } = {}) {
-  const to = new THREE.Spherical(fitDistance(), Math.PI / 2 - VIEW_ELEVATION, VIEWS[name]);
-  if (!animate) {
-    camera.position.setFromSpherical(to).add(controls.target);
+// 全身が収まる注視点（体の中ほど）
+function fullTarget() {
+  return new THREE.Vector3(0, bodyHeight * 0.5, 0);
+}
+
+// 注視点 target とカメラの向き・距離 sph へなめらかに移す
+function moveCamera(target, sph, { animate = true } = {}) {
+  if (!animate || reduceMotion.matches) {
+    tween = null;
+    controls.target.copy(target);
+    camera.position.setFromSpherical(sph).add(target);
     controls.update();
     return;
   }
   const from = sphericalOf(camera.position);
   // 近い向きに回る
-  let dTheta = to.theta - from.theta;
+  let dTheta = sph.theta - from.theta;
   dTheta = Math.atan2(Math.sin(dTheta), Math.cos(dTheta));
-  tween = { from, to: new THREE.Spherical(to.radius, to.phi, from.theta + dTheta), start: performance.now(), duration: 450 };
+  tween = {
+    from,
+    to: new THREE.Spherical(sph.radius, sph.phi, from.theta + dTheta),
+    fromTarget: controls.target.clone(),
+    toTarget: target.clone(),
+    start: performance.now(),
+    duration: 450,
+  };
+}
+
+// name: front / side / back は全身をその向きから、full は今の向きのまま全身に戻す
+function setView(name, { animate = true } = {}) {
+  focused = false;
+  const theta = name === 'full' ? sphericalOf(camera.position).theta : VIEWS[name];
+  moveCamera(fullTarget(), new THREE.Spherical(fitDistance(), Math.PI / 2 - VIEW_ELEVATION, theta), { animate });
 }
 
 function stepTween(now) {
@@ -146,6 +170,7 @@ function stepTween(now) {
   const t = Math.min((now - tween.start) / tween.duration, 1);
   const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; // ease-in-out
   const { from, to } = tween;
+  controls.target.lerpVectors(tween.fromTarget, tween.toTarget, e);
   const s = new THREE.Spherical(
     from.radius + (to.radius - from.radius) * e,
     from.phi + (to.phi - from.phi) * e,
@@ -155,15 +180,72 @@ function stepTween(now) {
   if (t >= 1) tween = null;
 }
 
+// 平行移動しても体から大きく離れないよう、注視点を体のまわりの箱に収める（カメラも同じだけ戻す）
+controls.addEventListener('change', () => {
+  const t = controls.target;
+  const clamped = new THREE.Vector3(
+    THREE.MathUtils.clamp(t.x, -0.6, 0.6),
+    THREE.MathUtils.clamp(t.y, 0.05, bodyHeight * 1.02),
+    THREE.MathUtils.clamp(t.z, -0.5, 0.5),
+  );
+  if (!clamped.equals(t)) {
+    camera.position.add(clamped.clone().sub(t));
+    t.copy(clamped);
+  }
+});
+
+// ダブルタップ: 体の当たった部位に寄る。寄っているときにもう一度ダブルタップすると全身に戻る
+const FOCUS_DISTANCE = 0.7;
+let focused = false;
+let lastTap = null;
+const raycaster = new THREE.Raycaster();
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!e.isPrimary) return;
+  const now = performance.now();
+  const near = lastTap && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30;
+  if (lastTap && now - lastTap.t < 320 && near) {
+    lastTap = null;
+    onDoubleTap(e);
+  } else {
+    lastTap = { t: now, x: e.clientX, y: e.clientY };
+  }
+});
+// 指を動かした（回転・パン）ならタップとして数えない
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (!e.isPrimary) lastTap = null;
+});
+
+function onDoubleTap(e) {
+  if (focused) {
+    setView('full');
+    return;
+  }
+  if (!body) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObject(body.figure, true)[0];
+  if (!hit) return;
+  const sph = sphericalOf(camera.position);
+  sph.radius = Math.min(sph.radius, FOCUS_DISTANCE);
+  moveCamera(hit.point, sph);
+  focused = true;
+}
+
 // 指で回し始めたら視点の移動をやめる
 controls.addEventListener('start', () => (tween = null));
 
-// 身長が変わったら注視点の高さを体の中ほどに合わせる（カメラも同じだけ動かす）
+// 身長が変わったら、注視点の高さを身長の変化に合わせて動かす（カメラも同じだけ動かす）。
+// 全身表示なら体の中ほどのまま、部位に寄っていれば寄った部位の近くのままになる
 function setBodyHeight(h) {
-  const dy = h * 0.5 - controls.target.y;
+  const dy = (h - bodyHeight) * (controls.target.y / bodyHeight);
   bodyHeight = h;
   controls.target.y += dy;
   camera.position.y += dy;
+  if (tween) {
+    tween.fromTarget.y += dy;
+    tween.toTarget.y += dy;
+  }
 }
 
 // 最初は少し斜め前から見る
