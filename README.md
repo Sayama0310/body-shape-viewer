@@ -16,7 +16,7 @@ iPhone の Safari で開き「ホーム画面に追加」して使う PWA で、
 ## 使い方・できること
 
 - **基本**: 性別・身長・体重をスライダー、数値入力、−／＋ボタンで入力すると体形が変わる。名前（任意）も付けられる
-- **年齢・体格**: 年齢、筋肉量（自動または手動）、体格の傾向（標準・アフリカ系・アジア系・ヨーロッパ系）
+- **年齢・体格**: 年齢、筋肉量（自動または手動）
 - **見た目**: 肌の色
 - **服装**: 上（タンクトップ・トップス）と下（ショートジーンズ・ショーツ）。服は体形に合わせて変形する
 - **周囲長（任意）**: 胸囲・アンダーバスト・ウエスト・ヒップ・二の腕・太もも・ふくらはぎ・足首。入れた値に体形を近づける。空欄ならモデルの値を表示する
@@ -91,7 +91,7 @@ CLAUDE.md, ROADMAP.md 開発方針とタスク一覧
 python -m venv .venv && . .venv/bin/activate
 pip install -r tools/export/requirements.txt
 
-# 体形データ（docs/data/anny-body.*, anny-shape-*.bin）
+# 体形データ（docs/data/anny-body.*, anny-shape-standard.bin）
 python tools/export/export_anny.py
 
 # 服（docs/data/assets/）。入力は npm の makehuman-data

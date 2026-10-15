@@ -338,7 +338,6 @@ function defaultState(index) {
     top: null, // 服装（アセットの id、なしなら null）
     bottom: null,
     skin: DEFAULT_SKIN, // 肌の色（SKIN_TONES の番号）
-    variant: 'standard', // 体格の傾向（data の shapes のキー）
   };
 }
 
@@ -350,8 +349,7 @@ class Person {
     this.girths = null;
     this.inRange = true;
     this.worn = [];
-    this.morph = null;
-    this.request = { outfit: 0, variant: 0 };
+    this.request = { outfit: 0 };
     this.x = 0; // 並べたときの位置（目標）
     this.label = document.createElement('div');
     this.label.className = 'person-label';
@@ -361,9 +359,7 @@ class Person {
   async init() {
     const { meta, shared: buffer } = shared.body;
     const model = new BodyModel(meta, buffer);
-    const variant = this.state.variant in meta.shapes ? this.state.variant : 'standard';
-    model.setShape(variant, await loadShapeBuffer(meta, variant));
-    this.state.variant = variant; // 読めなかった傾向は標準に戻る
+    model.setShape('standard', await loadShapeBuffer(meta, 'standard'));
     this.model = model;
     this.mapShape = createShapeMapper(model);
     this.positions = new THREE.BufferAttribute(new Float32Array(model.vertexCount * 3), 3);
@@ -414,7 +410,6 @@ class Person {
       },
       { quick },
     );
-    this.morph = null; // 入力が変わったら、途中の切り替えアニメーションは終わりにして新しい形にする
     this.model.blend(shape.params, this.positions.array);
     this.autoMuscle = Math.round(shape.params.muscle * 100);
     const { minY, girths, height } = this.model.measure(this.positions.array);
@@ -466,45 +461,6 @@ class Person {
     this.visibleIndex = new THREE.BufferAttribute(visibleBodyIndex(this.model.index, this.worn), 1);
     this.mesh.geometry.setIndex(this.visibleIndex);
     for (const a of this.worn) a.update(this.positions.array);
-  }
-
-  // 選んだ傾向の形状データを読み込み（初めてならネットワークから）、今の体形から新しい体形へなめらかに変える
-  async applyVariant() {
-    if (!this.model || this.model.variant === this.state.variant) return;
-    const request = ++this.request.variant;
-    const from = { positions: this.positions.array.slice(), y: this.figure.position.y };
-    try {
-      showStatus('体格の傾向のデータを読み込み中…');
-      await this.model.loadShape(this.state.variant);
-    } catch (err) {
-      console.error(err);
-      showStatus('データを読み込めませんでした（オフラインでは、一度選んだことのある傾向だけ使えます）');
-      return;
-    }
-    if (request !== this.request.variant) return;
-    this.mapShape = createShapeMapper(this.model);
-    this.update();
-    afterUpdate(this);
-    if (reduceMotion.matches) return;
-    this.morph = {
-      from,
-      to: { positions: this.positions.array.slice(), y: this.figure.position.y },
-      start: performance.now(),
-      duration: 600,
-    };
-    this.stepMorph(performance.now());
-  }
-
-  stepMorph(now) {
-    const m = this.morph;
-    if (!m) return;
-    const t = Math.min((now - m.start) / m.duration, 1);
-    const e = ease(t);
-    const out = this.positions.array;
-    for (let i = 0; i < out.length; i++) out[i] = m.from.positions[i] + (m.to.positions[i] - m.from.positions[i]) * e;
-    this.figure.position.y = m.from.y + (m.to.y - m.from.y) * e;
-    this.refreshGeometry();
-    if (t >= 1) this.morph = null;
   }
 
   displayName(index) {
@@ -727,7 +683,6 @@ const fields = [
 const muscleField = fields[3];
 const muscleAuto = document.getElementById('muscle-auto');
 const muscleFieldEl = document.getElementById('muscle-field');
-const variantSelect = document.getElementById('variant');
 const skinPicker = document.getElementById('skin-picker');
 
 // 筋肉量が自動のときは、自動で決めた値をスライダーと数値に表示する
@@ -778,7 +733,6 @@ function render({ syncNumbers = true, quick = false, update = true } = {}) {
   muscleFieldEl.classList.toggle('is-auto', state.muscle == null);
   if (syncNumbers) for (const f of girthFields) f.number.value = state[f.key] ?? '';
   for (const input of sexInputs) input.checked = input.value === state.sex;
-  variantSelect.value = state.variant;
   for (const input of skinPicker.querySelectorAll('input')) input.checked = Number(input.value) === state.skin;
   for (const slot of SLOTS) slotSelects[slot].value = state[slot] ?? '';
   if (document.activeElement !== nameInput) nameInput.value = state.name;
@@ -803,8 +757,7 @@ function updateSummaries() {
   document.getElementById('sheet-summary-bmi').textContent = `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}`;
   document.getElementById('basic-summary').textContent = basic;
   const muscle = state.muscle == null ? `自動 ${autoMuscle()}` : state.muscle;
-  const variant = [...variantSelect.options].find((o) => o.value === state.variant)?.textContent ?? '';
-  document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle} · ${variant}`;
+  document.getElementById('body-summary').textContent = `${state.age} 歳 · 筋肉量 ${muscle}`;
   const label = (id) => catalog.find((a) => a.id === id)?.label;
   const outfit = SLOTS.map((slot) => label(state[slot])).filter(Boolean);
   document.getElementById('outfit-summary').textContent = outfit.length ? outfit.join(' · ') : 'なし';
@@ -830,7 +783,6 @@ function restoreState(saved, index) {
   if (SEXES.includes(saved.sex)) s.sex = saved.sex;
   if (typeof saved.name === 'string') s.name = saved.name.slice(0, 12);
   if (Number.isInteger(saved.skin) && saved.skin >= 0 && saved.skin < SKIN_TONES.length) s.skin = saved.skin;
-  if ([...variantSelect.options].some((o) => o.value === saved.variant)) s.variant = saved.variant;
   // 服装は一覧を読み込んだ後に、存在する id か確かめる
   for (const slot of SLOTS) if (typeof saved[slot] === 'string') s[slot] = saved[slot];
   for (const f of girthFields) {
@@ -981,13 +933,6 @@ muscleAuto.addEventListener('change', () => {
   save();
 });
 
-variantSelect.addEventListener('change', () => {
-  state.variant = variantSelect.value;
-  updateSummaries();
-  save();
-  activePerson().applyVariant();
-});
-
 // 肌の色の選択肢
 SKIN_TONES.forEach((tone, i) => {
   const label = document.createElement('label');
@@ -1060,7 +1005,6 @@ renderer.setAnimationLoop((now) => {
   lastFrame = now;
   updateViewport();
   stepTween(now);
-  for (const p of people) p.stepMorph(now);
   stepLayout(dt);
   controls.update();
   renderer.render(scene, camera);

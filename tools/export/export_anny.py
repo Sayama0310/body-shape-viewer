@@ -40,13 +40,11 @@ AGE_ANCHORS = [2 / 3, 1.0]
 FIXED = {
     "proportions": 0.5,
 }
-# 体格の傾向（Anny の african / asian / caucasian）。標準は3つとも既定値（等分の混合）。
-# 形状（角の頂点）だけを傾向ごとのファイルに分け、局所変形・顔・計測断面は標準の上で取って共有する
+# 体格の傾向（Anny の african / asian / caucasian）。アプリでは標準（3つとも既定値 = 等分の混合）だけを使う。
+# 形状（角の頂点）は傾向ごとのファイルに書き出す形式のまま。傾向を足すときはここに加える
+# （例: "asian": {"label": "アジア系", "race": {"african": 0.0, "asian": 1.0, "caucasian": 0.0}}）
 VARIANTS = {
     "standard": {"label": "標準", "race": {}},
-    "african": {"label": "アフリカ系", "race": {"african": 1.0, "asian": 0.0, "caucasian": 0.0}},
-    "asian": {"label": "アジア系", "race": {"african": 0.0, "asian": 1.0, "caucasian": 0.0}},
-    "caucasian": {"label": "ヨーロッパ系", "race": {"african": 0.0, "asian": 0.0, "caucasian": 1.0}},
 }
 # 局所変形・計測頂点を決める基準の年齢（歳）
 REFERENCE_AGE_YEARS = 30
