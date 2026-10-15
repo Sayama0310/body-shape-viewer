@@ -130,7 +130,7 @@ Anny の `weight` は頭の形をほとんど変えないので、顔の肉付�
 | `faces` | Uint16 | `faceCount × 3` | 三角形の頂点番号 |
 | `mean`（形状ファイル） | Float32 | `vertexCount × 3` | "young" の36体形の平均の頂点座標（x, y, z の順） |
 | `deltas`（形状ファイル） | Int16 | `36 × vertexCount × 3` | "young" の角ごとの平均からの差分。`deltaScale` を掛けるとメートルになる |
-| `ageDeltas`（形状ファイル） | Int8 | `36 × vertexCount × 3` | 角ごとの "old" − "young"。`age.deltaScale` を掛けるとメートルになる |
+| `ageDeltas`（形状ファイル） | Int8 | `36 × vertexCount × 3` | 角ごとの "old" − "young"。`ageDeltaScale` を掛けるとメートルになる |
 | `localIndex` | Uint16 | 各変形の `count` の合計 | 局所変形で動く頂点の番号（変形の順に連結） |
 | `localDeltas` | Int16 | `Σ 2 × count × 3` | 局所変形の差分（変形ごとに incr, decr の順）。`localDeltaScale` を掛けるとメートルになる |
 | `faceFatIndex` | Uint16 | 頭部の頂点数 | 顔の肉付きで動く頂点の番号 |
