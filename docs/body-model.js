@@ -2,7 +2,7 @@
 // パラメータに応じて角の頂点と局所変形を重み付き合成する。
 
 const DATA_URL = new URL('./data/anny-body.json', import.meta.url);
-const FORMAT_VERSION = 5;
+const FORMAT_VERSION = 6;
 
 // 体重の換算に使う密度（Anny の anthropometry.py と同じ値）
 export const BODY_DENSITY = 980; // kg/m³
@@ -10,16 +10,33 @@ export const BODY_DENSITY = 980; // kg/m³
 // 周囲長の名前（data の measurements / localChanges の name と同じ）
 export const GIRTHS = ['chest', 'underbust', 'waist', 'hip', 'upperarm', 'thigh', 'calf', 'ankle'];
 
-// variant: 体格の傾向（data の shapes のキー）。共通データと、その傾向の形状だけを読み込む
-export async function loadBodyModel(variant = 'standard') {
+// 体形データの共通部分（メタデータと anny-body.bin）を読み込む。形状は loadShapeBuffer で傾向ごとに読む
+export async function loadBodyData() {
   const meta = await fetchJson(DATA_URL);
   if (meta.formatVersion !== FORMAT_VERSION) {
     throw new Error(`未対応のデータ形式です（formatVersion ${meta.formatVersion}）`);
   }
+  const shared = await fetchBuffer(new URL('./anny-body.bin', DATA_URL));
+  return { meta, shared };
+}
+
+// 傾向ごとの形状データ。複数の人で同じ傾向を使うときは1回だけ読む
+const shapeCache = new Map();
+export function loadShapeBuffer(meta, variant) {
+  if (!shapeCache.has(variant)) {
+    const p = fetchBuffer(new URL(meta.shapes[variant].file, DATA_URL));
+    p.catch(() => shapeCache.delete(variant)); // 失敗したら次はやり直す
+    shapeCache.set(variant, p);
+  }
+  return shapeCache.get(variant);
+}
+
+// variant: 体格の傾向（data の shapes のキー）。共通データとその傾向の形状を読み込んで BodyModel を作る
+export async function loadBodyModel(variant = 'standard', data = null) {
+  const { meta, shared } = data ?? (await loadBodyData());
   if (!(variant in meta.shapes)) variant = 'standard';
-  const [shared, shape] = await Promise.all([fetchBuffer(new URL('./anny-body.bin', DATA_URL)), fetchShape(meta, variant)]);
   const model = new BodyModel(meta, shared);
-  model.setShape(variant, shape);
+  model.setShape(variant, await loadShapeBuffer(meta, variant));
   return model;
 }
 
@@ -27,10 +44,6 @@ async function fetchBuffer(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`体形データを読み込めませんでした（${res.status}）`);
   return res.arrayBuffer();
-}
-
-export function fetchShape(meta, variant) {
-  return fetchBuffer(new URL(meta.shapes[variant].file, DATA_URL));
 }
 
 async function fetchJson(url) {
@@ -42,6 +55,11 @@ async function fetchJson(url) {
 function view(buffer, block, Type) {
   return new Type(buffer, block.offset, block.byteLength / Type.BYTES_PER_ELEMENT);
 }
+
+// 体重（Anny の weight）だけは、アンカーの範囲（0〜1）の外へ延長してよい範囲。
+// MakeHuman の「最大体重」でも BMI 30 前後までしか届かないため（Anny に忠実でない拡張）。
+// 範囲外の分は、筋肉量によらず「筋肉量が最小のときの体重方向の変形」（脂肪がつく・落ちる方向）を延長する
+export const WEIGHT_RANGE = [-0.25, 2];
 
 // アンカー列 anchors に対する値 x の補間重み [{index, weight}]（範囲外は端に丸める）
 function anchorWeights(anchors, x) {
@@ -137,7 +155,7 @@ export class BodyModel {
     this.cornerSize = this.vertexCount * 3;
   }
 
-  // 体格の傾向の形状（角の頂点）を差し替える。buffer は fetchShape で読み込んだもの
+  // 体格の傾向の形状（角の頂点）を差し替える。buffer は loadShapeBuffer で読み込んだもの
   setShape(variant, buffer) {
     const shape = this.meta.shapes[variant];
     this.variant = variant;
@@ -149,11 +167,25 @@ export class BodyModel {
   }
 
   async loadShape(variant) {
-    this.setShape(variant, await fetchShape(this.meta, variant));
+    this.setShape(variant, await loadShapeBuffer(this.meta, variant));
   }
 
   // 0 でない重みを持つ角の [{corner, weight}]
   cornerWeights(params) {
+    const weight = params.weight;
+    const inside = Math.min(Math.max(weight, 0), 1);
+    const list = this.anchorCombination({ ...params, weight: inside });
+    if (weight !== inside) {
+      // 範囲外の分: 筋肉量 0 の角で、体重の端の区間の差（端 − 中央）を延長量だけ足す
+      const edge = weight > 1 ? 1 : 0;
+      const k = Math.abs(weight - inside) / 0.5;
+      for (const e of this.anchorCombination({ ...params, muscle: 0, weight: edge })) list.push({ ...e, weight: e.weight * k });
+      for (const e of this.anchorCombination({ ...params, muscle: 0, weight: 0.5 })) list.push({ ...e, weight: -e.weight * k });
+    }
+    return list;
+  }
+
+  anchorCombination(params) {
     let list = [{ corner: 0, weight: 1 }];
     for (const dim of this.dims) {
       const ws = anchorWeights(dim.anchors, params[dim.name]);
@@ -250,8 +282,8 @@ export class BodyModel {
     const freeMuscle = Boolean(muscleRange);
     const localAt = freeMuscle ? 3 : 2;
     // 未知数 x = [height, weight, (muscle), local...] とその範囲
-    const lower = [0, 0, ...(freeMuscle ? [muscleRange[0]] : []), ...targets.map(() => -1)];
-    const upper = [1, 1, ...(freeMuscle ? [muscleRange[1]] : []), ...targets.map(() => 1)];
+    const lower = [0, WEIGHT_RANGE[0], ...(freeMuscle ? [muscleRange[0]] : []), ...targets.map(() => -1)];
+    const upper = [1, WEIGHT_RANGE[1], ...(freeMuscle ? [muscleRange[1]] : []), ...targets.map(() => 1)];
     const toParams = (x) => ({
       gender,
       age,
@@ -368,9 +400,8 @@ export class BodyModel {
 }
 
 // 入力（性別・年齢・身長 cm・体重 kg・任意の筋肉量と周囲長 cm）から Anny のパラメータを決める。
-// 筋肉量（0〜1）を指定しないときは自動で決める: Anny の weight は筋肉量が平均のときは効きが小さい
-// （BMI で ±2 程度）ため、BMI が性別ごとの標準から離れるほど muscle を下げて、太さの幅を広げる。
-// 自動で周囲長を指定したときは muscle も未知数にする。muscle は 0.5 を境に効き方が折れ曲がるので、
+// 筋肉量（0〜1）を指定しないときは平均（0.5）にする。
+// 筋肉量を指定せずに周囲長を指定したときは muscle も未知数にする。muscle は 0.5 を境に効き方が折れ曲がるので、
 // 0〜0.5 と 0.5〜1 の区間ごとに解いて良い方を選ぶ。
 // 顔の肉付きは BMI に連動させる（Anny の weight は頭の形をほとんど変えないため）。
 // quick が真なら、周囲長の局所変形と muscle を前回の値のまま身長・体重だけ合わせる（スライダー操作中用）
@@ -391,7 +422,8 @@ export function createShapeMapper(model) {
     const heightM = heightCm / 100;
     const bmi = weightKg / (heightM * heightM);
     const diff = bmi - centerBmi[sex];
-    const autoMuscle = 0.5 * Math.min(Math.max(1 - (Math.abs(diff) - 1) / 5, 0), 1);
+    // 筋肉量を指定しないときは平均（0.5）。体重の範囲は書き出しの補正と外挿で確保している
+    const autoMuscle = 0.5;
     const faceFat = Math.min(Math.max(diff / 10, -0.6), 1);
     const girthsM = {};
     for (const g of GIRTHS) if (Number.isFinite(girthsCm[g])) girthsM[g] = girthsCm[g] / 100;

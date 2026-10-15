@@ -36,13 +36,16 @@
         <button type="button" data-view="front">正面</button>
         <button type="button" data-view="side">横</button>
         <button type="button" data-view="back">後ろ</button>
+        <button type="button" data-view="full" aria-label="全身を表示">全身</button>
       </div>
       <p id="viewer-status" class="viewer-status" role="status" aria-hidden="true"></p>
+      <div id="person-labels" class="person-labels" aria-hidden="true"></div>
     </div>
     <!-- 入力のボトムシート。つまみ部分を上下にドラッグして引き出し量を変える -->
     <section id="sheet" class="sheet" aria-label="入力">
       <div id="sheet-grip" class="sheet-grip">
         <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="people-tabs" id="people-tabs" role="tablist" aria-label="表示する人"></div>
         <button type="button" id="sheet-toggle" class="sheet-summary" aria-controls="sheet-body" aria-expanded="false">
           <span id="sheet-summary-text"></span>
           <span id="sheet-summary-bmi" class="sheet-summary-bmi"></span>
@@ -55,6 +58,9 @@
             <span class="group-summary" id="basic-summary"></span>
           </button>
           <div class="group-body"><div class="group-inner">
+            <label class="select-row">名前（任意）
+              <input type="text" id="person-name" class="text-input" maxlength="12" placeholder="例: 自分" autocomplete="off">
+            </label>
             <div class="row">
               <div class="segmented" role="radiogroup" aria-label="性別">
                 <label><input type="radio" name="sex" value="male" checked><span>男性</span></label>
@@ -67,14 +73,22 @@
                 <label for="height-num">身長</label>
                 <span class="num"><input type="number" id="height-num" inputmode="decimal" min="130" max="200" step="0.1" value="170"> cm</span>
               </div>
-              <input type="range" id="height" min="130" max="200" step="1" value="170" aria-label="身長">
+              <div class="slider-row">
+                <button type="button" class="stepper" data-field="height" data-dir="-1" aria-label="身長を減らす">−</button>
+                <input type="range" id="height" min="130" max="200" step="1" value="170" aria-label="身長">
+                <button type="button" class="stepper" data-field="height" data-dir="1" aria-label="身長を増やす">＋</button>
+              </div>
             </div>
             <div class="field">
               <div class="field-head">
                 <label for="weight-num">体重</label>
                 <span class="num"><input type="number" id="weight-num" inputmode="decimal" min="30" max="150" step="0.1" value="65"> kg</span>
               </div>
-              <input type="range" id="weight" min="30" max="150" step="1" value="65" aria-label="体重">
+              <div class="slider-row">
+                <button type="button" class="stepper" data-field="weight" data-dir="-1" aria-label="体重を減らす">−</button>
+                <input type="range" id="weight" min="30" max="150" step="1" value="65" aria-label="体重">
+                <button type="button" class="stepper" data-field="weight" data-dir="1" aria-label="体重を増やす">＋</button>
+              </div>
             </div>
           </div></div>
         </section>
@@ -89,7 +103,11 @@
                 <label for="age-num">年齢</label>
                 <span class="num"><input type="number" id="age-num" inputmode="numeric" min="20" max="80" step="1" value="30"> 歳</span>
               </div>
-              <input type="range" id="age" min="20" max="80" step="1" value="30" aria-label="年齢">
+              <div class="slider-row">
+                <button type="button" class="stepper" data-field="age" data-dir="-1" aria-label="年齢を減らす">−</button>
+                <input type="range" id="age" min="20" max="80" step="1" value="30" aria-label="年齢">
+                <button type="button" class="stepper" data-field="age" data-dir="1" aria-label="年齢を増やす">＋</button>
+              </div>
             </div>
             <div class="field" id="muscle-field">
               <div class="field-head">
@@ -99,8 +117,12 @@
                   <input type="number" id="muscle-num" inputmode="numeric" min="0" max="100" step="1" value="50">
                 </span>
               </div>
-              <input type="range" id="muscle" min="0" max="100" step="1" value="50" aria-label="筋肉量">
-              <p class="hint">0〜100（50 が平均）。自動のときは体重と体形から決めます。</p>
+              <div class="slider-row">
+                <button type="button" class="stepper" data-field="muscle" data-dir="-1" aria-label="筋肉量を減らす">−</button>
+                <input type="range" id="muscle" min="0" max="100" step="1" value="50" aria-label="筋肉量">
+                <button type="button" class="stepper" data-field="muscle" data-dir="1" aria-label="筋肉量を増やす">＋</button>
+              </div>
+              <p class="hint">0〜100（50 が平均）。自動のときは平均（50）で、周囲長を入れたときはそれに合わせて決めます。</p>
             </div>
             <label class="select-row">体格の傾向
               <select id="variant">
@@ -197,7 +219,8 @@
     <ul>
       <li>身長・体重はスライダーか数値で入力します。性別で体形の傾向が変わります。</li>
       <li>下のパネルを引き出し、「周囲長（任意）」を開いて胸囲・ウエスト・ヒップ・二の腕・太ももなどを入れると、体形がその値に近づきます。空欄ならモデルの値を表示します。年齢と筋肉量（自動または手動）でも体形が変わります。</li>
-      <li>3D表示は1本指で回転、2本指でピンチすると拡大・縮小します。右上のボタンで正面・横・後ろに切り替えられます。</li>
+      <li>シート上部の「＋ 2人目を追加」で別の人をもう1人並べられます。タブで入力する人を切り替え、名前（任意）は頭の上に表示されます。</li>
+      <li>3D表示は1本指で回転、2本指のピンチで指の間に向かって拡大・縮小、2本指のドラッグで平行移動します。ダブルタップした部位に寄り、もう一度ダブルタップすると全身に戻ります。右上のボタンで正面・横・後ろ・全身に切り替えられます。</li>
       <li>モデルで表せない組み合わせのときは、近い体形を表示して画面下に注記を出します。</li>
     </ul>
     <h2>データの扱い</h2>
