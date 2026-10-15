@@ -57,11 +57,10 @@ function view(buffer, block, Type) {
 }
 
 // 体重（Anny の weight）だけは、アンカーの範囲（0〜1）の外へ延長してよい範囲（Anny に忠実でない拡張）。
-// MakeHuman の「最大体重」でも女性は BMI 30 前後までしか届かないため。
-// 太る側は「男性・筋肉量が最小のときの体重方向の変形」を延長する（女性の同じ方向を延長すると、
-// 胸・お腹が垂れ下がって折れ込み、股が三角に開く）。やせる側はその筋肉量での体重方向の変形を延長する。
+// MakeHuman の「最大体重」でも女性は BMI 30 前後までしか届かないため。範囲外の分は、その人の性別・筋肉量での
+// 体重の端の区間の変形（書き出しで作り直した方向。data/README.md の「Anny からの補正」）を延長する。
 // この範囲より先は形が崩れる（太る側は脂肪が折れ込み、やせる側は腰の横がくびれる）ので、近い体形で止める
-export const WEIGHT_RANGE = [-0.15, 1.5];
+export const WEIGHT_RANGE = [-0.25, 1.5];
 
 // アンカー列 anchors に対する値 x の補間重み [{index, weight}]（範囲外は端に丸める）
 function anchorWeights(anchors, x) {
@@ -180,10 +179,9 @@ export class BodyModel {
     if (weight !== inside) {
       // 範囲外の分: 体重の端の区間の差（端 − 中央）を延長量だけ足す（WEIGHT_RANGE の説明を参照）
       const edge = weight > 1 ? 1 : 0;
-      const dir = weight > 1 ? { ...params, gender: 0, muscle: 0 } : params;
       const k = Math.abs(weight - inside) / 0.5;
-      for (const e of this.anchorCombination({ ...dir, weight: edge })) list.push({ ...e, weight: e.weight * k });
-      for (const e of this.anchorCombination({ ...dir, weight: 0.5 })) list.push({ ...e, weight: -e.weight * k });
+      for (const e of this.anchorCombination({ ...params, weight: edge })) list.push({ ...e, weight: e.weight * k });
+      for (const e of this.anchorCombination({ ...params, weight: 0.5 })) list.push({ ...e, weight: -e.weight * k });
     }
     return list;
   }

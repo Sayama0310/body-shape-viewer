@@ -572,8 +572,10 @@ function renderTabs() {
 
 // 3D 表示上の名前: 頭の上に出す（2人のとき、または名前があるとき）
 const labelPos = new THREE.Vector3();
+const viewsEl = document.querySelector('.views');
 function updateLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
+  const toolbarBottom = viewsEl.getBoundingClientRect().bottom - rect.top;
   people.forEach((p, i) => {
     const show = p.model && (people.length > 1 || p.state.name.trim());
     p.label.style.opacity = show ? '1' : '0';
@@ -583,7 +585,8 @@ function updateLabels() {
     labelPos.set(p.figure.position.x + p.centerX, p.figure.position.y + (p.positions ? p.mesh.geometry.boundingBox.max.y : 0) + 0.08, 0);
     labelPos.project(camera);
     const x = ((labelPos.x + 1) / 2) * rect.width;
-    const y = ((1 - labelPos.y) / 2) * rect.height;
+    // 右上の視点ボタン・使い方ボタンと重ならないよう、それより下に出す
+    const y = Math.max(((1 - labelPos.y) / 2) * rect.height, toolbarBottom + p.label.offsetHeight + 4);
     p.label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
   });
 }
@@ -856,12 +859,15 @@ const sheetEl = document.getElementById('sheet');
 let viewKey = '';
 function updateViewport() {
   const { clientWidth: w, clientHeight: h } = container;
-  const visible = Math.min(Math.max(sheetEl.getBoundingClientRect().top - container.getBoundingClientRect().top, 120), h);
-  const key = `${w}x${h}x${visible.toFixed(1)}`;
+  const top = container.getBoundingClientRect().top;
+  const visible = Math.min(Math.max(sheetEl.getBoundingClientRect().top - top, 120), h);
+  // 上の視点ボタンの下から、シートの上までを見える範囲として体を収める（狭すぎるときはボタンの下も使う）
+  const toolbar = Math.min(Math.max(viewsEl.getBoundingClientRect().bottom - top, 0), Math.max(visible - 240, 0));
+  const key = `${w}x${h}x${visible.toFixed(1)}x${toolbar.toFixed(1)}`;
   if (key === viewKey) return;
   viewKey = key;
-  camera.aspect = w / visible;
-  camera.setViewOffset(w, visible, 0, 0, w, h);
+  camera.aspect = w / (visible - toolbar);
+  camera.setViewOffset(w, visible - toolbar, 0, -toolbar, w, h);
   camera.updateProjectionMatrix();
 }
 
