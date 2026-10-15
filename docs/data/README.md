@@ -95,14 +95,14 @@ Anny の `weight` は頭の形をほとんど変えないので、顔の肉付�
 | `layout` の名前 | 型 | 要素数 | 中身 |
 |---|---|---|---|
 | `faces` | Uint16 | `faceCount × 3` | 三角形の頂点番号 |
-| `mean` | Float32 | `vertexCount × 3` | 36体形の平均の頂点座標（x, y, z の順） |
+| `mean` | Float32 | `vertexCount × 3` | "young" の36体形の平均の頂点座標（x, y, z の順） |
 | `deltas` | Int16 | `36 × vertexCount × 3` | "young" の角ごとの平均からの差分。`deltaScale` を掛けるとメートルになる |
 | `ageDeltas` | Int8 | `36 × vertexCount × 3` | 角ごとの "old" − "young"。`age.deltaScale` を掛けるとメートルになる |
 | `localDeltas` | Int16 | `3 × 2 × vertexCount × 3` | 局所変形の差分（変形ごとに incr, decr の順）。`localDeltaScale` を掛けるとメートルになる |
 | `faceFatIndex` | Uint16 | 頭部の頂点数 | 顔の肉付きで動く頂点の番号 |
 | `faceFatDeltas` | Int16 | `2 × 頭部の頂点数 × 3` | 顔の肉付きの差分（+1, -1 の順）。`faceFat.deltaScale` を掛けるとメートルになる |
 
-量子化の誤差は 0.01mm 未満。
+量子化の誤差は、16bit のブロックで 0.01mm 未満、`ageDeltas`（8bit）で最大 1mm 程度。
 
 ## 書き出し直す
 
