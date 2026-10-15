@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { loadBodyModel, createShapeMapper } from './body-model.js';
+import { loadBodyModel, createShapeMapper, GIRTHS } from './body-model.js';
 
 // Anny のメッシュを身長・体重・性別に合わせて合成して表示する。
 
@@ -16,6 +16,8 @@ const weightNumber = document.getElementById('weight-num');
 const sexInputs = document.querySelectorAll('input[name="sex"]');
 const bmiOut = document.getElementById('bmi');
 const bmiClassOut = document.getElementById('bmi-class');
+const girthSummary = document.getElementById('girth-summary');
+const GIRTH_LABELS = { chest: '胸囲', waist: 'ウエスト', hip: 'ヒップ' };
 
 // --- シーン ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -71,12 +73,15 @@ async function initBody() {
   }
 }
 
-function updateBody() {
+// quick: スライダー操作中。周囲長の調整は前回のまま身長・体重だけ合わせる（指を離したら全体を合わせ直す）
+function updateBody({ quick = false } = {}) {
   if (!body) return;
   const { model, mapShape, mesh, positions } = body;
-  const shape = mapShape({ sex: state.sex, heightCm: state.height, weightKg: state.weight });
+  const girthsCm = Object.fromEntries(GIRTHS.map((g) => [g, state[g] ?? NaN]));
+  const shape = mapShape({ sex: state.sex, heightCm: state.height, weightKg: state.weight, girthsCm }, { quick });
   model.blend(shape.params, positions.array);
-  const { minY } = model.measure(positions.array);
+  const { minY, girths } = model.measure(positions.array);
+  showGirths(girths);
   mesh.position.y = -minY; // 足の裏を床（Y = 0）に合わせる
   positions.needsUpdate = true;
   mesh.geometry.computeVertexNormals();
@@ -84,14 +89,25 @@ function updateBody() {
   showStatus(shape.inRange ? '' : 'モデルで表せる範囲を超えているため、近い体形を表示しています');
 }
 
-// 入力が続いても合成は1フレームに1回にする
-let updateQueued = false;
-function scheduleBodyUpdate() {
-  if (updateQueued) return;
-  updateQueued = true;
+// メッシュから測った周囲長を表示する
+function showGirths(girths) {
+  const cm = (g) => (girths[g] * 100).toFixed(1);
+  for (const g of GIRTHS) document.getElementById(`${g}-measured`).textContent = cm(g);
+  girthSummary.textContent = GIRTHS.map((g) => `${GIRTH_LABELS[g]} ${cm(g)}`).join('・');
+}
+
+// 入力が続いても合成は1フレームに1回にする（1回でも通常の更新が頼まれていれば通常の更新にする）
+let queued = null;
+function scheduleBodyUpdate({ quick = false } = {}) {
+  if (queued) {
+    queued.quick &&= quick;
+    return;
+  }
+  queued = { quick };
   requestAnimationFrame(() => {
-    updateQueued = false;
-    updateBody();
+    const opts = queued;
+    queued = null;
+    updateBody(opts);
   });
 }
 
@@ -102,10 +118,14 @@ const fields = [
   { key: 'weight', range: weightRange, number: weightNumber },
 ];
 
-const state = { height: 170, weight: 65, sex: 'male' };
+const girthFields = GIRTHS.map((key) => ({ key, number: document.getElementById(`${key}-num`) }));
+
+// 周囲長は未入力なら null
+const state = { height: 170, weight: 65, sex: 'male', chest: null, waist: null, hip: null };
 
 function limits(field) {
-  return { min: Number(field.range.min), max: Number(field.range.max) };
+  const el = field.range ?? field.number;
+  return { min: Number(el.min), max: Number(el.max) };
 }
 
 function isValid(field, value) {
@@ -127,11 +147,12 @@ function bmiClass(bmi) {
   return '肥満（4度）';
 }
 
-function render({ syncNumbers = true } = {}) {
+function render({ syncNumbers = true, quick = false } = {}) {
   for (const f of fields) {
     f.range.value = state[f.key];
     if (syncNumbers) f.number.value = state[f.key];
   }
+  if (syncNumbers) for (const f of girthFields) f.number.value = state[f.key] ?? '';
   for (const input of sexInputs) input.checked = input.value === state.sex;
 
   const h = state.height / 100;
@@ -139,7 +160,7 @@ function render({ syncNumbers = true } = {}) {
   bmiOut.textContent = bmi.toFixed(1);
   bmiClassOut.textContent = bmiClass(bmi);
 
-  scheduleBodyUpdate();
+  scheduleBodyUpdate({ quick });
 }
 
 function save() {
@@ -163,14 +184,20 @@ function restore() {
     if (isValid(f, v)) state[f.key] = round1(v);
   }
   if (SEXES.includes(saved.sex)) state.sex = saved.sex;
+  for (const f of girthFields) {
+    const v = Number(saved[f.key]);
+    if (saved[f.key] != null && isValid(f, v)) state[f.key] = round1(v);
+  }
 }
 
 for (const f of fields) {
   f.range.addEventListener('input', () => {
     state[f.key] = Number(f.range.value);
-    render();
+    render({ quick: true });
     save();
   });
+  // 指を離したら周囲長も含めて合わせ直す
+  f.range.addEventListener('change', () => render());
 
   // 入力途中（空欄や範囲外）は反映せず、確定時に範囲内へ丸める
   f.number.addEventListener('input', () => {
@@ -191,6 +218,29 @@ for (const f of fields) {
   });
 }
 
+for (const f of girthFields) {
+  // 空欄にしたら未入力に戻す。入力途中の範囲外の値は反映しない
+  f.number.addEventListener('input', () => {
+    const v = f.number.valueAsNumber;
+    if (f.number.value === '') state[f.key] = null;
+    else if (isValid(f, v)) state[f.key] = round1(v);
+    else return;
+    render({ syncNumbers: false });
+    save();
+  });
+  f.number.addEventListener('change', () => {
+    const v = f.number.valueAsNumber;
+    if (f.number.value === '' || !Number.isFinite(v)) {
+      state[f.key] = null;
+    } else {
+      const { min, max } = limits(f);
+      state[f.key] = round1(THREE.MathUtils.clamp(v, min, max));
+    }
+    save();
+    render();
+  });
+}
+
 for (const input of sexInputs) {
   input.addEventListener('change', () => {
     if (!input.checked) return;
@@ -201,6 +251,8 @@ for (const input of sexInputs) {
 }
 
 restore();
+// 周囲長を入力済みなら、その欄を開いた状態で始める
+if (girthFields.some((f) => state[f.key] != null)) document.getElementById('girths').open = true;
 render();
 initBody();
 

@@ -5,8 +5,10 @@
 
 | ファイル | 中身 |
 |---|---|
-| `anny-body.json` | メタデータ（頂点数・次元・量子化スケール・バイナリ内の配置） |
-| `anny-body.bin` | 三角形・平均形状・各体形との差分（約 3.3MB） |
+| `anny-body.json` | メタデータ（頂点数・次元・量子化スケール・周囲長の計測頂点・バイナリ内の配置） |
+| `anny-body.bin` | 三角形・平均形状・各体形との差分・局所変形の差分（約 3.8MB） |
+
+`formatVersion` は 2（1 からの変更: 局所変形 `localDeltas` と周囲長の計測頂点 `measurements` を追加）。
 
 ## 体形の表し方
 
@@ -35,6 +37,30 @@ Anny の形状は、フェノタイプ（0〜1 の値）ごとに決まったア
 
 補間結果と Anny 本体の出力の差は最大 6〜7mm 程度（腕を下ろす回転が体形によって少し変わるため）。
 
+### 局所変形（周囲長の調整）
+
+`localChanges` に並ぶ Anny の局所変形（`annyLabel`）を、値 `v`（-1〜1）で足せる。
+
+| `name` | Anny のラベル | 効く部位 |
+|---|---|---|
+| `chest` | `measure-bust-circ-incr` | 胸囲 |
+| `waist` | `measure-waist-circ-incr` | ウエスト |
+| `hip` | `measure-hips-circ-incr` | ヒップ |
+
+頂点 += `|v| × localDeltas[k][s] × localDeltaScale`（k は `localChanges` の順番、s は `v > 0` なら 0（incr）、`v < 0` なら 1（decr））。
+差分は平均的な成人（`gender = muscle = weight = 0.5`, `height = 0.3`, 身長 約170cm）の上で取ったもので、
+ほかの体形にもそのまま足す（Anny 本体でも局所変形は体形によらない加算）。
+
+### 周囲長の測り方
+
+`measurements.<name>` は周囲長を測る頂点の番号の配列。これらの頂点を XZ 平面（水平面）に投影し、
+凸包の周長を周囲長とする（巻き尺を当てたときの長さの近似）。腕・手の頂点は含まない。
+
+| `name` | 選び方 |
+|---|---|
+| `chest` | 女性の基準体形でバストの頂点の高さ ±8mm の胴の頂点 |
+| `waist` | Anny の `anthropometry.py` がウエストに使う頂点のループ |
+| `hip` | 基準体形で周囲長が最大になる高さ ±8mm の頂点 |
 ## 座標系・姿勢
 
 - 単位はメートル。three.js と同じ右手系で Y が上、+Z が体の正面、+X が体の左側
@@ -52,6 +78,7 @@ Anny の形状は、フェノタイプ（0〜1 の値）ごとに決まったア
 | `faces` | Uint16 | `faceCount × 3` | 三角形の頂点番号 |
 | `mean` | Float32 | `vertexCount × 3` | 36体形の平均の頂点座標（x, y, z の順） |
 | `deltas` | Int16 | `36 × vertexCount × 3` | 角ごとの平均からの差分。`deltaScale` を掛けるとメートルになる |
+| `localDeltas` | Int16 | `3 × 2 × vertexCount × 3` | 局所変形の差分（変形ごとに incr, decr の順）。`localDeltaScale` を掛けるとメートルになる |
 
 量子化の誤差は 0.01mm 未満。
 
