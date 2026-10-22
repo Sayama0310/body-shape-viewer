@@ -7,6 +7,7 @@
       "kind": "clothes",
       "slot": "top",
       "label": "タンクトップ",
+      "tint": false,
       "file": "tank_top.bin",
       "texture": "tank_top.png",
       "vertexCount": 1113,
@@ -53,6 +54,7 @@
       "kind": "clothes",
       "slot": "bottom",
       "label": "ショートジーンズ",
+      "tint": false,
       "file": "short_jeans.bin",
       "texture": "short_jeans.png",
       "vertexCount": 1444,
@@ -93,6 +95,335 @@
       },
       "bindDistanceMax": 0.022835285394321076,
       "bytes": 392836
+    },
+    {
+      "id": "hair_short02",
+      "kind": "hair",
+      "slot": "hair",
+      "label": "ショート",
+      "tint": true,
+      "file": "hair_short02.bin",
+      "texture": "hair_short02.png",
+      "vertexCount": 2061,
+      "indexCount": 10032,
+      "hiddenFaceCount": 633,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 12366
+        },
+        "bary": {
+          "offset": 12368,
+          "byteLength": 16488
+        },
+        "offset": {
+          "offset": 28856,
+          "byteLength": 24732
+        },
+        "uv": {
+          "offset": 53588,
+          "byteLength": 16488
+        },
+        "index": {
+          "offset": 70076,
+          "byteLength": 20064
+        },
+        "hiddenFaces": {
+          "offset": 90140,
+          "byteLength": 1266
+        }
+      },
+      "source": {
+        "name": "makehuman_system_assets/hair/short02",
+        "author": null,
+        "license": "CC0 1.0",
+        "homepage": null,
+        "copyright": null
+      },
+      "bindDistanceMax": 0.023418719316726344,
+      "bytes": 226610
+    },
+    {
+      "id": "hair_short01",
+      "kind": "hair",
+      "slot": "hair",
+      "label": "短髪",
+      "tint": true,
+      "file": "hair_short01.bin",
+      "texture": "hair_short01.png",
+      "vertexCount": 3177,
+      "indexCount": 11034,
+      "hiddenFaceCount": 635,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 19062
+        },
+        "bary": {
+          "offset": 19064,
+          "byteLength": 25416
+        },
+        "offset": {
+          "offset": 44480,
+          "byteLength": 38124
+        },
+        "uv": {
+          "offset": 82604,
+          "byteLength": 25416
+        },
+        "index": {
+          "offset": 108020,
+          "byteLength": 22068
+        },
+        "hiddenFaces": {
+          "offset": 130088,
+          "byteLength": 1270
+        }
+      },
+      "source": {
+        "name": "makehuman_system_assets/hair/short01",
+        "author": null,
+        "license": "CC0 1.0",
+        "homepage": null,
+        "copyright": null
+      },
+      "bindDistanceMax": 0.024245551594302306,
+      "bytes": 373987
+    },
+    {
+      "id": "hair_afro01",
+      "kind": "hair",
+      "slot": "hair",
+      "label": "アフロ",
+      "tint": true,
+      "file": "hair_afro01.bin",
+      "texture": "hair_afro01.png",
+      "vertexCount": 2276,
+      "indexCount": 6576,
+      "hiddenFaceCount": 422,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 13656
+        },
+        "bary": {
+          "offset": 13656,
+          "byteLength": 18208
+        },
+        "offset": {
+          "offset": 31864,
+          "byteLength": 27312
+        },
+        "uv": {
+          "offset": 59176,
+          "byteLength": 18208
+        },
+        "index": {
+          "offset": 77384,
+          "byteLength": 13152
+        },
+        "hiddenFaces": {
+          "offset": 90536,
+          "byteLength": 844
+        }
+      },
+      "source": {
+        "name": "makehuman_system_assets/hair/afro01",
+        "author": null,
+        "license": "CC0 1.0",
+        "homepage": null,
+        "copyright": null
+      },
+      "bindDistanceMax": 0.037704983722442784,
+      "bytes": 353451
+    },
+    {
+      "id": "hair_ponytail01",
+      "kind": "hair",
+      "slot": "hair",
+      "label": "ポニーテール",
+      "tint": true,
+      "file": "hair_ponytail01.bin",
+      "texture": "hair_ponytail01.png",
+      "vertexCount": 4049,
+      "indexCount": 16056,
+      "hiddenFaceCount": 666,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 24294
+        },
+        "bary": {
+          "offset": 24296,
+          "byteLength": 32392
+        },
+        "offset": {
+          "offset": 56688,
+          "byteLength": 48588
+        },
+        "uv": {
+          "offset": 105276,
+          "byteLength": 32392
+        },
+        "index": {
+          "offset": 137668,
+          "byteLength": 32112
+        },
+        "hiddenFaces": {
+          "offset": 169780,
+          "byteLength": 1332
+        }
+      },
+      "source": {
+        "name": "makehuman_system_assets/hair/ponytail01",
+        "author": null,
+        "license": "CC0 1.0",
+        "homepage": null,
+        "copyright": null
+      },
+      "bindDistanceMax": 0.10962761523559789,
+      "bytes": 352130
+    },
+    {
+      "id": "hair_bob02",
+      "kind": "hair",
+      "slot": "hair",
+      "label": "ボブ（流した前髪）",
+      "tint": true,
+      "file": "hair_bob02.bin",
+      "texture": "hair_bob02.png",
+      "vertexCount": 1759,
+      "indexCount": 6744,
+      "hiddenFaceCount": 1415,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 10554
+        },
+        "bary": {
+          "offset": 10556,
+          "byteLength": 14072
+        },
+        "offset": {
+          "offset": 24628,
+          "byteLength": 21108
+        },
+        "uv": {
+          "offset": 45736,
+          "byteLength": 14072
+        },
+        "index": {
+          "offset": 59808,
+          "byteLength": 13488
+        },
+        "hiddenFaces": {
+          "offset": 73296,
+          "byteLength": 2830
+        }
+      },
+      "source": {
+        "name": "makehuman_system_assets/hair/bob02",
+        "author": null,
+        "license": "CC0 1.0",
+        "homepage": null,
+        "copyright": null
+      },
+      "bindDistanceMax": 0.050874809242912836,
+      "bytes": 187867
+    },
+    {
+      "id": "hair_blunt_bob",
+      "kind": "hair",
+      "slot": "hair",
+      "label": "ボブ（ぱっつん前髪）",
+      "tint": true,
+      "file": "hair_blunt_bob.bin",
+      "texture": "hair_blunt_bob.png",
+      "vertexCount": 3113,
+      "indexCount": 14928,
+      "hiddenFaceCount": 239,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 18678
+        },
+        "bary": {
+          "offset": 18680,
+          "byteLength": 24904
+        },
+        "offset": {
+          "offset": 43584,
+          "byteLength": 37356
+        },
+        "uv": {
+          "offset": 80940,
+          "byteLength": 24904
+        },
+        "index": {
+          "offset": 105844,
+          "byteLength": 29856
+        },
+        "hiddenFaces": {
+          "offset": 135700,
+          "byteLength": 478
+        }
+      },
+      "source": {
+        "name": "hair01/hair/toigo_blunt_bob_with_bangs",
+        "author": null,
+        "license": "CC0 1.0",
+        "homepage": null,
+        "copyright": null
+      },
+      "bindDistanceMax": 0.0623521021991767,
+      "bytes": 354722
+    },
+    {
+      "id": "hair_curled_bob",
+      "kind": "hair",
+      "slot": "hair",
+      "label": "内巻きボブ",
+      "tint": true,
+      "file": "hair_curled_bob.bin",
+      "texture": "hair_curled_bob.png",
+      "vertexCount": 1517,
+      "indexCount": 8556,
+      "hiddenFaceCount": 960,
+      "layout": {
+        "bind": {
+          "offset": 0,
+          "byteLength": 9102
+        },
+        "bary": {
+          "offset": 9104,
+          "byteLength": 12136
+        },
+        "offset": {
+          "offset": 21240,
+          "byteLength": 18204
+        },
+        "uv": {
+          "offset": 39444,
+          "byteLength": 12136
+        },
+        "index": {
+          "offset": 51580,
+          "byteLength": 17112
+        },
+        "hiddenFaces": {
+          "offset": 68692,
+          "byteLength": 1920
+        }
+      },
+      "source": {
+        "name": "hair01/hair/toigo_curled_under_bob",
+        "author": null,
+        "license": "CC0 1.0",
+        "homepage": null,
+        "copyright": null
+      },
+      "bindDistanceMax": 0.05492075387424738,
+      "bytes": 291542
     }
   ]
 }

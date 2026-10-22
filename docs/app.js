@@ -301,6 +301,17 @@ const SKIN_TONES = [
 ];
 const DEFAULT_SKIN = 3;
 
+// 髪の色のプリセット。髪のテクスチャは明るさだけなので、この色を掛けて塗る
+const HAIR_COLORS = [
+  { hex: '#2b2522', label: '黒' },
+  { hex: '#4f3424', label: 'こげ茶' },
+  { hex: '#8c5c38', label: '茶' },
+  { hex: '#d9a964', label: '金' },
+];
+const DEFAULT_HAIR_COLOR = 1;
+// 最初の髪形（data/assets の id）。1人目・2人目で変える
+const DEFAULT_HAIR = ['hair_short02', 'hair_blunt_bob'];
+
 function showStatus(text) {
   if (text) statusEl.textContent = text; // 消すときは文字を残したままフェードアウトさせる
   statusEl.classList.toggle('is-shown', Boolean(text));
@@ -319,6 +330,8 @@ function defaultState(index) {
     weight: index === 0 ? 65 : 52,
     sex: index === 0 ? 'male' : 'female',
     skin: DEFAULT_SKIN, // 肌の色（SKIN_TONES の番号）
+    hair: DEFAULT_HAIR[index] ?? DEFAULT_HAIR[0], // 髪形（data/assets の髪の id。なしなら null）
+    hairColor: DEFAULT_HAIR_COLOR, // 髪の色（HAIR_COLORS の番号）
   };
 }
 
@@ -406,13 +419,14 @@ class Person {
   async applyOutfit() {
     if (!this.model || !catalog.length) return;
     const request = ++this.request.outfit;
-    const ids = catalog.map((a) => a.id); // 服は常に一覧のものをすべて着る
+    // 服は常に一覧のものをすべて着る。髪は選んだもの1つ
+    const ids = catalog.filter((a) => a.kind !== 'hair' || a.id === this.state.hair).map((a) => a.id);
     let next;
     try {
       next = await Promise.all(ids.map(async (id) => this.worn.find((a) => a.info.id === id) ?? Attachment.fromLoaded(await loadAssetData(id))));
     } catch (err) {
       console.error(err);
-      showStatus('服のデータを読み込めませんでした');
+      showStatus('服・髪のデータを読み込めませんでした');
       return;
     }
     if (request !== this.request.outfit) return; // 読み込み中に選び直された
@@ -428,6 +442,11 @@ class Person {
     this.visibleIndex = new THREE.BufferAttribute(visibleBodyIndex(this.model.index, this.worn), 1);
     this.mesh.geometry.setIndex(this.visibleIndex);
     for (const a of this.worn) a.update(this.positions.array);
+    this.applyHairColor();
+  }
+
+  applyHairColor() {
+    for (const a of this.worn) if (a.info.tint) a.mesh.material.color.set(HAIR_COLORS[this.state.hairColor].hex);
   }
 
   displayName(index) {
@@ -614,6 +633,10 @@ async function initWardrobe() {
     console.error(err);
     return;
   }
+  for (const a of catalog.filter((x) => x.kind === 'hair')) hairSelect.add(new Option(a.label, a.id));
+  // 保存されていた髪形が一覧にないときは、なしにする
+  for (const p of people) if (p.state.hair && !catalog.some((a) => a.id === p.state.hair)) p.state.hair = null;
+  render({ update: false });
   for (const p of people) p.applyOutfit();
 }
 
@@ -624,6 +647,8 @@ const fields = [
   { key: 'weight', range: document.getElementById('weight'), number: document.getElementById('weight-num') },
 ];
 const skinPicker = document.getElementById('skin-picker');
+const hairSelect = document.getElementById('hair-style');
+const hairPicker = document.getElementById('hair-picker');
 
 function limits(field) {
   const el = field.range ?? field.number;
@@ -658,6 +683,8 @@ function render({ syncNumbers = true, quick = false, update = true } = {}) {
   }
   for (const input of sexInputs) input.checked = input.value === state.sex;
   for (const input of skinPicker.querySelectorAll('input')) input.checked = Number(input.value) === state.skin;
+  if (catalog.length) hairSelect.value = state.hair ?? '';
+  for (const input of hairPicker.querySelectorAll('input')) input.checked = Number(input.value) === state.hairColor;
   if (document.activeElement !== nameInput) nameInput.value = state.name;
 
   const h = state.height / 100;
@@ -707,7 +734,9 @@ function updateSummaries() {
   document.getElementById('sheet-summary-text').textContent = who + basic;
   document.getElementById('sheet-summary-bmi').textContent = numbersShown ? `BMI ${bmi.toFixed(1)} ${bmiClass(bmi)}` : '';
   document.getElementById('basic-summary').textContent = basic;
-  document.getElementById('look-summary').textContent = `肌 ${SKIN_TONES[state.skin].label}`;
+  const hair = catalog.find((a) => a.id === state.hair)?.label;
+  const hairText = state.hair ? `髪 ${hair ?? ''}（${HAIR_COLORS[state.hairColor].label}）` : '髪 なし';
+  document.getElementById('look-summary').textContent = `肌 ${SKIN_TONES[state.skin].label} · ${hairText}`;
 }
 
 function save() {
@@ -729,6 +758,9 @@ function restoreState(saved, index) {
   if (SEXES.includes(saved.sex)) s.sex = saved.sex;
   if (typeof saved.name === 'string') s.name = saved.name.slice(0, 12);
   if (Number.isInteger(saved.skin) && saved.skin >= 0 && saved.skin < SKIN_TONES.length) s.skin = saved.skin;
+  // 髪形は一覧を読み込んだ後に、存在する id か確かめる（保存がない以前のデータは最初の髪形のまま）
+  if (saved.hair === null || typeof saved.hair === 'string') s.hair = saved.hair;
+  if (Number.isInteger(saved.hairColor) && saved.hairColor >= 0 && saved.hairColor < HAIR_COLORS.length) s.hairColor = saved.hairColor;
   return s;
 }
 
@@ -854,6 +886,29 @@ for (const input of skinPicker.querySelectorAll('input')) {
   input.addEventListener('change', () => {
     state.skin = Number(input.value);
     activePerson().applySkin();
+    updateSummaries();
+    save();
+  });
+}
+
+// 髪形と髪の色
+hairSelect.addEventListener('change', () => {
+  state.hair = hairSelect.value || null;
+  updateSummaries();
+  save();
+  activePerson().applyOutfit();
+});
+HAIR_COLORS.forEach((color, i) => {
+  const label = document.createElement('label');
+  label.className = 'swatch';
+  label.title = color.label;
+  label.innerHTML = `<input type="radio" name="hair-color" value="${i}" aria-label="${color.label}"><span style="background:${color.hex}"></span>`;
+  hairPicker.append(label);
+});
+for (const input of hairPicker.querySelectorAll('input')) {
+  input.addEventListener('change', () => {
+    state.hairColor = Number(input.value);
+    activePerson().applyHairColor();
     updateSummaries();
     save();
   });

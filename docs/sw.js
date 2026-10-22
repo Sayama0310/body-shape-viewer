@@ -8,7 +8,7 @@
 // VERSION と FILES は `node tools/update-sw.mjs` で更新する（手で書き換えない）。
 
 // <precache>
-const VERSION = '6256fb0513';
+const VERSION = '48bfb26938';
 const FILES = [
   './',
   'app.js',
@@ -19,6 +19,10 @@ const FILES = [
   'data/anny-body.json',
   'data/anny-shape-standard.bin',
   'data/assets/README.md',
+  'data/assets/hair_blunt_bob.bin',
+  'data/assets/hair_blunt_bob.png',
+  'data/assets/hair_short02.bin',
+  'data/assets/hair_short02.png',
   'data/assets/index.json',
   'data/assets/short_jeans.bin',
   'data/assets/short_jeans.png',

@@ -117,6 +117,13 @@
               <div class="field-head"><span>肌の色</span></div>
               <div class="swatches" id="skin-picker" role="radiogroup" aria-label="肌の色"></div>
             </div>
+            <label class="select-row">髪形
+              <select id="hair-style"><option value="">なし</option></select>
+            </label>
+            <div class="field">
+              <div class="field-head"><span>髪の色</span></div>
+              <div class="swatches" id="hair-picker" role="radiogroup" aria-label="髪の色"></div>
+            </div>
           </div></div>
         </section>
       </form>
@@ -125,6 +132,7 @@
   <dialog id="help" class="help">
     <h2>使い方</h2>
     <ul>
+      <li>「見た目」で肌の色・髪形・髪の色を選べます。</li>
       <li>入力のシートはふだんは隠れています。下の「入力」を押すと出て、右上の × で閉じます。</li>
       <li>シートを出しても、身長・体重などの数値は「•••」で隠れています。「数値を表示」を押すと表示され、シートを閉じる・たたむ、またはアプリを切り替えると、また隠れます。</li>
       <li>身長・体重はスライダーか数値で入力します。性別で体形の傾向が変わります（年齢は30歳、筋肉量は平均として計算します）。</li>
@@ -135,7 +143,7 @@
     <h2>データの扱い</h2>
     <p>入力した値はこの端末の中だけで計算・保存し、外部には送信しません。ホーム画面に追加するとオフラインでも使えます。</p>
     <h2>クレジット</h2>
-    <p>体形モデル: <a href="https://github.com/naver/anny" target="_blank" rel="noopener">Anny</a>（NAVER LABS Europe, Apache License 2.0）／ MakeHuman アセット（CC0）／ 服: Mindfront（CC BY 4.0）・punkduck（CC BY 3.0）／ <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a>（MIT）。<a href="licenses/README.md" target="_blank">ライセンスの詳細</a></p>
+    <p>体形モデル: <a href="https://github.com/naver/anny" target="_blank" rel="noopener">Anny</a>（NAVER LABS Europe, Apache License 2.0）／ MakeHuman アセット（CC0）／ 服: Mindfront（CC BY 4.0）・punkduck（CC BY 3.0）／ 髪: MakeHuman・MargaretToigo（CC0）／ <a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a>（MIT）。<a href="licenses/README.md" target="_blank">ライセンスの詳細</a></p>
     <button type="button" id="help-close" class="help-close">閉じる</button>
   </dialog>
   <script type="module" src="app.js"></script>
