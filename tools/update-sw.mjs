@@ -13,7 +13,8 @@ const DOCS = fileURLToPath(new URL('../docs/', import.meta.url));
 const SW = join(DOCS, 'sw.js');
 const EXCLUDE = new Set(['sw.js']);
 // 最初はキャッシュしないファイル（選ばれたときに sw.js が取得してキャッシュする）
-const ON_DEMAND = /^data\/anny-shape-(?!standard\.bin$).*\.bin$/;
+// 髪は選ばれたものだけを読むので、最初の髪形以外は選ばれたときに取得する
+const ON_DEMAND = /^data\/anny-shape-(?!standard\.bin$).*\.bin$|^data\/assets\/hair_(?!short02\.|blunt_bob\.).*$/;
 
 function walk(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {

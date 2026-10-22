@@ -19,8 +19,11 @@ Anny の体の三角形にバインドし直す:
 
 使い方:
     npm pack makehuman-data@0.0.2 && mkdir mh && tar xzf makehuman-data-0.0.2.tgz -C mh
-    # https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html から
-    # makehuman_system_assets_cc0.zip を取得して packs/ に展開する
+    # MakeHuman のアセットパック（https://static.makehumancommunity.org/assets/assetpacks/ の
+    # makehuman_system_assets と hair01）を packs/ の下にそれぞれのディレクトリで展開する
+    curl -LO https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip
+    curl -LO https://files.makehumancommunity.org/asset_packs/hair01/hair01_cc0.zip
+    unzip makehuman_system_assets_cc0.zip -d packs/makehuman_system_assets && unzip hair01_cc0.zip -d packs/hair01
     python tools/export/export_assets.py --source mh/package/public/data/proxies --packs packs
 """
 
@@ -47,6 +50,19 @@ HAIR_COVER_DISTANCE = 0.15
 ASSETS = [
     {"id": "tank_top", "kind": "clothes", "slot": "top", "label": "タンクトップ", "source": "Tank_Top_01"},
     {"id": "short_jeans", "kind": "clothes", "slot": "bottom", "label": "ショートジーンズ", "source": "ShortJeans"},
+    # 髪（MakeHuman のアセットパック）。色はアプリで付けるので、テクスチャは明るさだけにする（tint）
+    *[
+        {"id": f"hair_{name}", "kind": "hair", "slot": "hair", "label": label, "format": "mhclo", "source": source, "tint": True}
+        for name, label, source in [
+            ("short02", "ショート", "makehuman_system_assets/hair/short02"),
+            ("short01", "短髪", "makehuman_system_assets/hair/short01"),
+            ("afro01", "アフロ", "makehuman_system_assets/hair/afro01"),
+            ("ponytail01", "ポニーテール", "makehuman_system_assets/hair/ponytail01"),
+            ("bob02", "ボブ（流した前髪）", "makehuman_system_assets/hair/bob02"),
+            ("blunt_bob", "ボブ（ぱっつん前髪）", "hair01/hair/toigo_blunt_bob_with_bangs"),
+            ("curled_bob", "内巻きボブ", "hair01/hair/toigo_curled_under_bob"),
+        ]
+    ],
 ]
 # 自由に使えるライセンス（帰属表示は docs/licenses/ に置く）
 ALLOWED_LICENSES = ("CC0", "CC BY")
@@ -213,6 +229,20 @@ def load_mhclo(spec, packs_dir):
     }
 
 
+def tint_texture(img):
+    """色を付け直せるテクスチャにする: 明るさだけ（グレー + α）にし、不透明な部分の明るさをそろえる。
+    アプリはこれに髪の色を掛ける（元の髪の色が黒でも銀でも、同じ色指定でほぼ同じ見た目になる）"""
+    rgba = np.asarray(img, dtype=np.float64) / 255
+    lum = rgba[..., :3] @ np.array([0.2126, 0.7152, 0.0722])
+    opaque = rgba[..., 3] > 0.5
+    if opaque.any():
+        lo, hi = np.percentile(lum[opaque], [5, 95])
+        # 暗い筋〜明るい筋を 0.45〜1.0 に広げる（毛の流れの濃淡は残す）
+        lum = 0.45 + 0.55 * np.clip((lum - lo) / max(hi - lo, 1e-6), 0, 1)
+    out = np.stack([lum, rgba[..., 3]], axis=-1)
+    return Image.fromarray(np.round(out * 255).astype(np.uint8), "LA")
+
+
 def frames(p0, p1, p2):
     e1, e2 = p1 - p0, p2 - p0
     n = np.cross(e1, e2)
@@ -296,6 +326,8 @@ def export_asset(spec, dirs, body_mesh, body_faces, base_to_anny, base_obj, out_
         img = Image.open(data["diffuse"]).convert("RGBA")
         size = spec.get("textureSize", TEXTURE_SIZE)
         img.thumbnail((size, size), Image.LANCZOS)
+        if spec.get("tint"):
+            img = tint_texture(img)
         texture = f"{spec['id']}.png"
         img.save(out_dir / texture, optimize=True)
 
@@ -318,6 +350,7 @@ def export_asset(spec, dirs, body_mesh, body_faces, base_to_anny, base_obj, out_
 
     return {
         **{k: spec[k] for k in ("id", "kind", "slot", "label")},
+        "tint": bool(spec.get("tint")),
         "file": f"{spec['id']}.bin",
         "texture": texture,
         "vertexCount": int(len(verts)),

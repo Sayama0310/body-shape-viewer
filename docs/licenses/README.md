@@ -8,6 +8,7 @@
 | Anny 0.6.1（NAVER LABS Europe） | `data/anny-body.*` | Apache License 2.0 | [`anny-LICENSE.txt`](anny-LICENSE.txt) |
 | MakeHuman / MPFB2 のアセット（Anny が利用） | `data/anny-body.*` に含まれる形状 | CC0 1.0 | [`makehuman-mpfb2-CC0.md`](makehuman-mpfb2-CC0.md) |
 | MakeHuman の服（下の「服」を参照） | `data/assets/` | CC BY 3.0 / CC BY 4.0 | 各ライセンスの公式ページ |
+| MakeHuman の髪（下の「髪」を参照） | `data/assets/hair_*` | CC0 1.0 | [`makehuman-mpfb2-CC0.md`](makehuman-mpfb2-CC0.md) |
 
 ## Anny について
 
@@ -39,3 +40,20 @@ MakeHuman のアセット（npm の `makehuman-data` 0.0.2 に含まれる MakeH
 | ショートジーンズ（`short_jeans`） | ShortJeans | punkduck | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 いずれも元データの表記は「(c) MakeHuman.org 2001-2015」。
+
+## 髪（`data/assets/hair_*`）
+
+MakeHuman の公式アセットパック（https://static.makehumancommunity.org/assets/assetpacks/ の
+`makehuman_system_assets` と `hair01`）の髪を、`tools/export/export_assets.py` で Anny の体にバインドし直して書き出した派生データ。
+変更点: 頂点を Anny の体の三角形にバインドし直した、テクスチャを 512px に縮小して明るさだけ（グレー）にした（色はアプリで付ける）、髪の下で隠す頭皮の三角形を求めて追加した。
+いずれも `.mhclo` ファイル自体に CC0 と書かれているもの。
+
+| 本アプリでの名前 | 元のアセット | 作者・著作権者 | ライセンス |
+|---|---|---|---|
+| ショート（`hair_short02`） | short02（makehuman_system_assets） | Data Collection AB, Joel Palmius, Jonas Hauquier | CC0 1.0 |
+| 短髪（`hair_short01`） | short01（同） | 同上 | CC0 1.0 |
+| アフロ（`hair_afro01`） | afro01（同） | 同上 | CC0 1.0 |
+| ポニーテール（`hair_ponytail01`） | ponytail01（同） | 同上 | CC0 1.0 |
+| ボブ（流した前髪）（`hair_bob02`） | bob02（同） | 同上 | CC0 1.0 |
+| ボブ（ぱっつん前髪）（`hair_blunt_bob`） | toigo_blunt_bob_with_bangs（hair01） | MargaretToigo | CC0 1.0 |
+| 内巻きボブ（`hair_curled_bob`） | toigo_curled_under_bob（hair01） | MargaretToigo | CC0 1.0 |

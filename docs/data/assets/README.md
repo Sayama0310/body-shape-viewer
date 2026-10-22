@@ -15,8 +15,8 @@ MakeHuman のプロキシ（服・髪）は、各頂点を「MakeHuman の基本
 2. 各頂点を、`anny` トポロジの体の三角形のうち最も近いものにバインドし直す。
    バインドは三角形の頂点番号 `(a, b, c)`、重心座標 `(u, v)`、三角形の向きに沿ったオフセット `(ox, oy, oz)`（メートル）
 3. 服の下に隠れる体の三角形を求める。
-   `.mhclo` の `delete_verts` に加えて、体の頂点から法線方向に出した光線が 6cm 以内で服の不透明な部分（テクスチャの α > 0.5）に当たる頂点を「覆われている」とし、
-   3頂点とも覆われた三角形を隠す
+   `.mhclo` の `delete_verts` に加えて、体の頂点から法線方向に出した光線が 6cm 以内（髪は 1.5cm 以内）で服の不透明な部分（テクスチャの α > 0.5）に当たる頂点を「覆われている」とし、
+   3頂点とも覆われた三角形を隠す。髪は毛先のすき間から下が見えるので、頭皮のすぐ上で覆っている部分だけを隠す（首まわりまで隠すと穴が見える）
 
 ブラウザでは、合成した体の頂点から毎回次の式でアセットの頂点を計算する（`Attachment.update`）。
 
@@ -31,7 +31,7 @@ MakeHuman のプロキシ（服・髪）は、各頂点を「MakeHuman の基本
 |---|---|
 | `index.json` | アセットの一覧（`id`, `kind`, `slot`, `label`, 出典・ライセンス、`<id>.bin` 内の配置） |
 | `<id>.bin` | バインドとメッシュ（下表） |
-| `<id>.png` | テクスチャ（512px に縮小、α 付き） |
+| `<id>.png` | テクスチャ（512px に縮小、α 付き）。`tint` が真のもの（髪）は明るさだけ（グレー + α）で、アプリが髪の色を掛ける |
 
 `<id>.bin` はリトルエンディアンで、各ブロックの位置は `index.json` の `layout.<名前>.offset` / `byteLength`。
 
@@ -61,6 +61,8 @@ MakeHuman のプロキシ（服・髪）は、各頂点を「MakeHuman の基本
 ## アセットを増やす手順
 
 1. `makehuman-data` のメタデータ（`metadata.license`）で、ライセンスが CC0 / CC BY であることを確認する
-2. `tools/export/export_assets.py` の `ASSETS` に追加する（`kind` は `clothes`、`slot` は `top` / `bottom`）。アプリは一覧の服を常にすべて着る
+2. `tools/export/export_assets.py` の `ASSETS` に追加する（`kind` は `clothes` / `hair`、`slot` は `top` / `bottom` / `hair`）。
+   アプリは一覧の服を常にすべて着て、髪は選ばれた1つだけを付ける。MakeHuman の公式アセットパック（`.mhclo`）のものは `"format": "mhclo"` にする。
+   ライセンスは `.mhclo` 自体の記載で確認する（パックの一覧ページで CC0 とされていても、ファイルに AGPL などと書かれているものがある）
 3. `python tools/export/export_assets.py --source <makehuman-data>/public/data/proxies` を実行する
 4. `docs/licenses/README.md` に出典（作者・ライセンス）を追記し、`node tools/update-sw.mjs` を実行する
